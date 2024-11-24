@@ -1,13 +1,16 @@
 use core::borrow::Borrow;
 use alloc::vec;
 use p3_air::{Air, AirBuilder, AirBuilderWithPublicValues, BaseAir};
-use p3_baby_bear::{BabyBear, Poseidon2BabyBear};
-use p3_challenger::DuplexChallenger;
+use p3_symmetric::{CompressionFunctionFromHasher, SerializingHasher32};
+use p3_keccak::Keccak256Hash;
+use core::marker::PhantomData;
+use p3_challenger::{HashChallenger, SerializingChallenger32};
+use p3_mersenne_31::Mersenne31;
 use p3_commit::ExtensionMmcs;
-use p3_dft::Radix2DitParallel;
 use p3_field::extension::BinomialExtensionField;
 use p3_field::{Field, FieldAlgebra, PrimeField64};
 use p3_fri::{FriConfig, TwoAdicFriPcs};
+use p3_circle::CirclePcs;
 use p3_matrix::dense::RowMajorMatrix;
 use p3_matrix::Matrix;
 use p3_merkle_tree::MerkleTreeMmcs;
@@ -98,50 +101,51 @@ impl<F> Borrow<FibonacciRow<F>> for [F] {
     }
 }
 
-type Val = BabyBear;
-type Perm = Poseidon2BabyBear<16>;
-type MyHash = PaddingFreeSponge<Perm, 16, 8, 8>;
-type MyCompress = TruncatedPermutation<Perm, 2, 8, 16>;
-type ValMmcs =
-    MerkleTreeMmcs<<Val as Field>::Packing, <Val as Field>::Packing, MyHash, MyCompress, 8>;
-type Challenge = BinomialExtensionField<Val, 4>;
+type Val = Mersenne31;
+type Challenge = BinomialExtensionField<Val, 3>;
 type ChallengeMmcs = ExtensionMmcs<Val, Challenge, ValMmcs>;
-type Challenger = DuplexChallenger<Val, Perm, 16, 8>;
-type Dft = Radix2DitParallel<Val>;
-type Pcs = TwoAdicFriPcs<Val, Dft, ValMmcs, ChallengeMmcs>;
+type ByteHash = Keccak256Hash;
+type FieldHash = SerializingHasher32<ByteHash>;
+type Challenger = SerializingChallenger32<Val, HashChallenger<u8, ByteHash, 32>>;
+type MyCompress = CompressionFunctionFromHasher<ByteHash, 2, 32>;
+type ValMmcs = MerkleTreeMmcs<Val, u8, FieldHash, MyCompress, 32>;
+type Pcs = CirclePcs<Val, ValMmcs, ChallengeMmcs>;
 type MyConfig = StarkConfig<Pcs, Challenge, Challenger>;
 
 /// n-th Fibonacci number expected to be x
 fn test_public_value_impl(n: usize, x: u64) {
-    let perm = Perm::new_from_rng_128(&mut thread_rng());
-    let hash = MyHash::new(perm.clone());
-    let compress = MyCompress::new(perm.clone());
-    let val_mmcs = ValMmcs::new(hash, compress);
+    let byte_hash = ByteHash {};
+    let field_hash = FieldHash::new(byte_hash);
+    let compress = MyCompress::new(byte_hash);
+    let val_mmcs = ValMmcs::new(field_hash, compress);
     let challenge_mmcs = ChallengeMmcs::new(val_mmcs.clone());
-    let dft = Dft::default();
     let trace = generate_trace_rows::<Val>(0, 1, n);
     let fri_config = FriConfig {
-        log_blowup: 2,
-        num_queries: 28,
+        log_blowup: 1,
+        num_queries: 8,
         proof_of_work_bits: 8,
         mmcs: challenge_mmcs,
     };
-    let pcs = Pcs::new(dft, val_mmcs, fri_config);
+    let pcs = Pcs {
+        mmcs: val_mmcs,
+        fri_config,
+        _phantom: PhantomData,
+    };
     let config = MyConfig::new(pcs);
-    let mut challenger = Challenger::new(perm.clone());
+    let mut challenger = Challenger::from_hasher(vec![], byte_hash);
     let pis = vec![
-        BabyBear::from_canonical_u64(0),
-        BabyBear::from_canonical_u64(1),
-        BabyBear::from_canonical_u64(x),
+        Mersenne31::from_canonical_u64(0),
+        Mersenne31::from_canonical_u64(1),
+        Mersenne31::from_canonical_u64(x),
     ];
     let proof = prove(&config, &FibonacciAir {}, &mut challenger, trace, &pis);
-    let mut challenger = Challenger::new(perm);
+    let mut challenger = Challenger::from_hasher(vec![], byte_hash);
     verify(&config, &FibonacciAir {}, &mut challenger, &proof, &pis).expect("verification failed");
 }
 
 #[test]
 fn test_one_row_trace() {
-    test_public_value_impl(1, 1);
+    test_public_value_impl(4, 3);
 }
 
 #[test]
@@ -153,12 +157,11 @@ fn test_public_value() {
 #[test]
 #[should_panic(expected = "assertion `left == right` failed: constraints had nonzero value")]
 fn test_incorrect_public_value() {
-    let perm = Perm::new_from_rng_128(&mut thread_rng());
-    let hash = MyHash::new(perm.clone());
-    let compress = MyCompress::new(perm.clone());
-    let val_mmcs = ValMmcs::new(hash, compress);
+    let byte_hash = ByteHash {};
+    let field_hash = FieldHash::new(byte_hash);
+    let compress = MyCompress::new(byte_hash);
+    let val_mmcs = ValMmcs::new(field_hash, compress);
     let challenge_mmcs = ChallengeMmcs::new(val_mmcs.clone());
-    let dft = Dft::default();
     let fri_config = FriConfig {
         log_blowup: 2,
         num_queries: 28,
@@ -166,13 +169,18 @@ fn test_incorrect_public_value() {
         mmcs: challenge_mmcs,
     };
     let trace = generate_trace_rows::<Val>(0, 1, 1 << 3);
-    let pcs = Pcs::new(dft, val_mmcs, fri_config);
+
+    let pcs = Pcs {
+        mmcs: val_mmcs,
+        fri_config,
+        _phantom: PhantomData,
+    };
     let config = MyConfig::new(pcs);
-    let mut challenger = Challenger::new(perm.clone());
+    let mut challenger = Challenger::from_hasher(vec![], byte_hash);
     let pis = vec![
-        BabyBear::from_canonical_u64(0),
-        BabyBear::from_canonical_u64(1),
-        BabyBear::from_canonical_u64(123_123), // incorrect result
+        Mersenne31::from_canonical_u64(0),
+        Mersenne31::from_canonical_u64(1),
+        Mersenne31::from_canonical_u64(123_123), // incorrect result
     ];
     prove(&config, &FibonacciAir {}, &mut challenger, trace, &pis);
 }
