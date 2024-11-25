@@ -4,6 +4,7 @@
 
 extern crate alloc;
 
+mod evaluation_frame;
 mod config;
 mod folder;
 mod proof;
