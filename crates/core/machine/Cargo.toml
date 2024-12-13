@@ -26,6 +26,7 @@ p3-uni-stark = { workspace = true }
 p3-util = { workspace = true }
 zkm2-derive = { workspace = true }
 zkm2-primitives = { workspace = true }
+zkm2-core-executor = { workspace = true }
 
 amcl = { package = "snowbridge-amcl", version = "1.0.2", default-features = false, features = [
   "bls381",
@@ -60,7 +61,6 @@ criterion = "0.5.1"
 num = { version = "0.4.3", features = ["rand"] }
 rand = "0.8.5"
 #test-artifacts = { workspace = true }
-zkm2-core-executor = { workspace = true}
 
 [features]
 debug = []
