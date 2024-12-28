@@ -37,12 +37,14 @@ pub type InnerChallenger = DuplexChallenger<InnerVal, InnerPerm, 16, 8>;
 pub type InnerDft = Radix2DitParallel<InnerVal>;
 pub type InnerPcs = TwoAdicFriPcs<InnerVal, InnerDft, InnerValMmcs, InnerChallengeMmcs>;
 
-pub type InnerInputProof = <TwoAdicFriGenericConfig<Vec<BatchOpening<InnerVal, InnerValMmcs>>, <InnerValMmcs as Mmcs<InnerVal>>::Error> as FriGenericConfig<InnerVal>>::InputProof;
+pub type InnerInputProof = Vec<BatchOpening<InnerVal, InnerValMmcs>>;
 
 pub type InnerQueryProof = QueryProof<InnerChallenge, InnerChallengeMmcs, InnerInputProof>;
 pub type InnerCommitPhaseStep = CommitPhaseProofStep<InnerChallenge, InnerChallengeMmcs>;
 pub type InnerFriProof = FriProof<InnerChallenge, InnerChallengeMmcs, InnerVal, InnerInputProof>;
 pub type InnerBatchOpening = BatchOpening<InnerVal, InnerValMmcs>;
+
+pub type InnerPcsProof = <InnerPcs as p3_commit::Pcs<InnerChallenge, InnerChallenger>>::Proof;
 
 /// The permutation for inner recursion.
 #[must_use]
