@@ -7,8 +7,8 @@ use p3_commit::{ExtensionMmcs, Mmcs};
 use p3_dft::Radix2DitParallel;
 use p3_field::{extension::BinomialExtensionField, Field, FieldAlgebra};
 use p3_fri::{
-    BatchOpening, CommitPhaseProofStep, FriConfig, FriProof, QueryProof,
-    TwoAdicFriPcs, TwoAdicFriGenericConfigForMmcs, FriGenericConfig, TwoAdicFriGenericConfig,
+    BatchOpening, CommitPhaseProofStep, FriConfig, FriGenericConfig, FriProof, QueryProof,
+    TwoAdicFriGenericConfig, TwoAdicFriGenericConfigForMmcs, TwoAdicFriPcs,
 };
 use p3_merkle_tree::MerkleTreeMmcs;
 use p3_symmetric::{Hash, PaddingFreeSponge, TruncatedPermutation};

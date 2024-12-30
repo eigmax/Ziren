@@ -185,6 +185,7 @@ pub fn verify_two_adic_pcs<C: CircuitConfig<F = SC::Val>, SC: BabyBearFriConfigV
                                 builder.reduce_e(new_alpha);
                                 alpha_pows.push(new_alpha);
                             }
+
                             alphas.push(alpha_pows[pow]);
                             p_at_zs.push(p_at_z);
                             p_at_xs.push(p_at_x);
