@@ -8,8 +8,7 @@ use std::{
 };
 use web_time::Instant;
 
-//use crate::riscv::{CoreShapeConfig, RiscvAir};
-use crate::mips::{MipsAir};
+use crate::mips::{MipsAir, CoreShapeConfig};
 use p3_challenger::FieldChallenger;
 use p3_maybe_rayon::prelude::*;
 use serde::{de::DeserializeOwned, Serialize};
@@ -26,13 +25,14 @@ use p3_field::PrimeField32;
 use p3_matrix::Matrix;
 
 use crate::{
-    //io::ZKMStdin,
-    //riscv::cost::CostEstimator,
+    io::ZKMStdin,
+    mips::cost::CostEstimator,
     utils::{chunk_vec, concurrency::TurnBasedSync},
 };
 use zkm2_core_executor::{
-    events::{format_table_line, sorted_table_lines},
-    ExecutionState,
+    events::{format_table_line, sorted_table_lines}, Executor,
+    ExecutionState, Program, ExecutionRecord, ExecutionReport,
+    subproof::NoOpSubproofVerifier, ZKMContext, ExecutionError,
 };
 use zkm2_primitives::io::ZKMPublicValues;
 
@@ -46,15 +46,14 @@ use zkm2_stark::{
 
 #[derive(Error, Debug)]
 pub enum ZKMCoreProverError {
-    //#[error("failed to execute program: {0}")]
-    //ExecutionError(ExecutionError),
+    #[error("failed to execute program: {0}")]
+    ExecutionError(ExecutionError),
     #[error("io error: {0}")]
     IoError(io::Error),
     #[error("serialization error: {0}")]
     SerializationError(bincode::Error),
 }
 
-/*
 pub fn prove_simple<SC: StarkGenericConfig, P: MachineProver<SC, MipsAir<SC::Val>>>(
     config: SC,
     mut runtime: Executor,
@@ -786,7 +785,6 @@ pub fn run_test_core<P: MachineProver<BabyBearPoseidon2, MipsAir<BabyBear>>>(
 
     Ok(proof)
 }
-*/
 
 #[allow(unused_variables)]
 pub fn run_test_machine_with_prover<SC, A, P: MachineProver<SC, A>>(
@@ -855,7 +853,6 @@ where
     run_test_machine_with_prover::<SC, A, CpuProver<_, _>>(&prover, records, pk, vk)
 }
 
-/*
 fn trace_checkpoint<SC: StarkGenericConfig>(
     program: Program,
     file: &File,
@@ -881,7 +878,6 @@ where
 
     (records, runtime.report)
 }
-        */
 
 fn reset_seek(file: &mut File) {
     file.seek(std::io::SeekFrom::Start(0))
