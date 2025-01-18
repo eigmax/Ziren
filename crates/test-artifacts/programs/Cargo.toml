@@ -2,7 +2,14 @@
 members = [
   "revme",
   "sha2-rust",
+  "sha2",
+  "sha-extend",
+  "keccak-permute",
+  "keccak256",
+  "panic",
+  "sha-compress",
   "sha2-precompile",
+  "fibonacci",
 ]
 resolver = "2"
 

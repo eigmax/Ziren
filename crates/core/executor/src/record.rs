@@ -1,18 +1,19 @@
 use hashbrown::HashMap;
-use itertools::Itertools;
+use itertools::{EitherOrBoth, Itertools};
 use p3_field::{FieldAlgebra, PrimeField};
-use std::sync::Arc;
 use zkm2_stark::{
     air::{MachineAir, PublicValues},
     MachineRecord, SplitOpts, ZKMCoreOpts,
 };
 
+use std::{mem::take, sync::Arc};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     events::{
         add_sharded_byte_lookup_events, AluEvent, ByteLookupEvent, ByteRecord, CpuEvent, LookupId,
         MemoryInitializeFinalizeEvent, MemoryLocalEvent, MemoryRecordEnum, SyscallEvent,
+        PrecompileEvents, PrecompileEvent,
     },
     syscalls::SyscallCode,
     CoreShape, Opcode, Program,
@@ -46,8 +47,8 @@ pub struct ExecutionRecord {
     pub lt_events: Vec<AluEvent>,
     /// A trace of the byte lookups that are needed.
     pub byte_lookups: HashMap<u32, HashMap<ByteLookupEvent, usize>>,
-    // /// A trace of the precompile events.
-    // pub precompile_events: PrecompileEvents,
+    /// A trace of the precompile events.
+    pub precompile_events: PrecompileEvents,
     // /// A trace of the global memory initialize events.
     pub global_memory_initialize_events: Vec<MemoryInitializeFinalizeEvent>,
     // /// A trace of the global memory finalize events.
@@ -80,7 +81,7 @@ impl Default for ExecutionRecord {
             divrem_events: Vec::default(),
             lt_events: Vec::default(),
             byte_lookups: HashMap::default(),
-            // precompile_events: PrecompileEvents::default(),
+            precompile_events: PrecompileEvents::default(),
             global_memory_initialize_events: Vec::default(),
             global_memory_finalize_events: Vec::default(),
             cpu_local_memory_access: Vec::default(),
@@ -112,7 +113,7 @@ impl ExecutionRecord {
         // let id = self.nonce_lookup.len() as u64;
         let id = self.next_nonce;
         self.next_nonce += 1;
-        self.nonce_lookup.insert(id as usize, 0);
+        //self.nonce_lookup.insert(id as usize, 0);
         LookupId(id)
     }
 
@@ -169,8 +170,6 @@ impl ExecutionRecord {
     /// included in every shard.
     #[must_use]
     pub fn defer(&mut self) -> ExecutionRecord {
-        panic!("Umple")
-        /*
         let mut execution_record = ExecutionRecord::new(self.program.clone());
         execution_record.precompile_events = std::mem::take(&mut self.precompile_events);
         execution_record.global_memory_initialize_events =
@@ -178,87 +177,85 @@ impl ExecutionRecord {
         execution_record.global_memory_finalize_events =
             std::mem::take(&mut self.global_memory_finalize_events);
         execution_record
-            */
     }
 
     /// Splits the deferred [`ExecutionRecord`] into multiple [`ExecutionRecord`]s, each which
     /// contain a "reasonable" number of deferred events.
     pub fn split(&mut self, last: bool, opts: SplitOpts) -> Vec<ExecutionRecord> {
-        //     let mut shards = Vec::new();
-        //
-        //     let precompile_events = take(&mut self.precompile_events);
-        //
-        //     for (syscall_code, events) in precompile_events.into_iter() {
-        //         let threshold = match syscall_code {
-        //             SyscallCode::KECCAK_PERMUTE => opts.keccak,
-        //             SyscallCode::SHA_EXTEND => opts.sha_extend,
-        //             SyscallCode::SHA_COMPRESS => opts.sha_compress,
-        //             _ => opts.deferred,
-        //         };
-        //
-        //         let chunks = events.chunks_exact(threshold);
-        //         if last {
-        //             let remainder = chunks.remainder().to_vec();
-        //             if !remainder.is_empty() {
-        //                 let mut execution_record = ExecutionRecord::new(self.program.clone());
-        //                 execution_record.precompile_events.insert(syscall_code, remainder);
-        //                 shards.push(execution_record);
-        //             }
-        //         } else {
-        //             self.precompile_events.insert(syscall_code, chunks.remainder().to_vec());
-        //         }
-        //         let mut event_shards = chunks
-        //             .map(|chunk| {
-        //                 let mut execution_record = ExecutionRecord::new(self.program.clone());
-        //                 execution_record.precompile_events.insert(syscall_code, chunk.to_vec());
-        //                 execution_record
-        //             })
-        //             .collect::<Vec<_>>();
-        //         shards.append(&mut event_shards);
-        //     }
-        //
-        //     if last {
-        //         self.global_memory_initialize_events.sort_by_key(|event| event.addr);
-        //         self.global_memory_finalize_events.sort_by_key(|event| event.addr);
-        //
-        //         let mut init_addr_bits = [0; 32];
-        //         let mut finalize_addr_bits = [0; 32];
-        //         for mem_chunks in self
-        //             .global_memory_initialize_events
-        //             .chunks(opts.memory)
-        //             .zip_longest(self.global_memory_finalize_events.chunks(opts.memory))
-        //         {
-        //             let (mem_init_chunk, mem_finalize_chunk) = match mem_chunks {
-        //                 EitherOrBoth::Both(mem_init_chunk, mem_finalize_chunk) => {
-        //                     (mem_init_chunk, mem_finalize_chunk)
-        //                 }
-        //                 EitherOrBoth::Left(mem_init_chunk) => (mem_init_chunk, [].as_slice()),
-        //                 EitherOrBoth::Right(mem_finalize_chunk) => ([].as_slice(), mem_finalize_chunk),
-        //             };
-        //             let mut shard = ExecutionRecord::new(self.program.clone());
-        //             shard.global_memory_initialize_events.extend_from_slice(mem_init_chunk);
-        //             shard.public_values.previous_init_addr_bits = init_addr_bits;
-        //             if let Some(last_event) = mem_init_chunk.last() {
-        //                 let last_init_addr_bits = core::array::from_fn(|i| (last_event.addr >> i) & 1);
-        //                 init_addr_bits = last_init_addr_bits;
-        //             }
-        //             shard.public_values.last_init_addr_bits = init_addr_bits;
-        //
-        //             shard.global_memory_finalize_events.extend_from_slice(mem_finalize_chunk);
-        //             shard.public_values.previous_finalize_addr_bits = finalize_addr_bits;
-        //             if let Some(last_event) = mem_finalize_chunk.last() {
-        //                 let last_finalize_addr_bits =
-        //                     core::array::from_fn(|i| (last_event.addr >> i) & 1);
-        //                 finalize_addr_bits = last_finalize_addr_bits;
-        //             }
-        //             shard.public_values.last_finalize_addr_bits = finalize_addr_bits;
-        //
-        //             shards.push(shard);
-        //         }
-        //     }
-        //
-        //     shards
-        panic!("Umpl")
+        let mut shards = Vec::new();
+
+        let precompile_events = take(&mut self.precompile_events);
+
+        for (syscall_code, events) in precompile_events.into_iter() {
+            let threshold = match syscall_code {
+                SyscallCode::KECCAK_PERMUTE => opts.keccak,
+                SyscallCode::SHA_EXTEND => opts.sha_extend,
+                SyscallCode::SHA_COMPRESS => opts.sha_compress,
+                _ => opts.deferred,
+            };
+
+            let chunks = events.chunks_exact(threshold);
+            if last {
+                let remainder = chunks.remainder().to_vec();
+                if !remainder.is_empty() {
+                    let mut execution_record = ExecutionRecord::new(self.program.clone());
+                    execution_record.precompile_events.insert(syscall_code, remainder);
+                    shards.push(execution_record);
+                }
+            } else {
+                self.precompile_events.insert(syscall_code, chunks.remainder().to_vec());
+            }
+            let mut event_shards = chunks
+                .map(|chunk| {
+                    let mut execution_record = ExecutionRecord::new(self.program.clone());
+                    execution_record.precompile_events.insert(syscall_code, chunk.to_vec());
+                    execution_record
+                })
+                .collect::<Vec<_>>();
+            shards.append(&mut event_shards);
+        }
+
+        if last {
+            self.global_memory_initialize_events.sort_by_key(|event| event.addr);
+            self.global_memory_finalize_events.sort_by_key(|event| event.addr);
+
+            let mut init_addr_bits = [0; 32];
+            let mut finalize_addr_bits = [0; 32];
+            for mem_chunks in self
+                .global_memory_initialize_events
+                .chunks(opts.memory)
+                .zip_longest(self.global_memory_finalize_events.chunks(opts.memory))
+            {
+                let (mem_init_chunk, mem_finalize_chunk) = match mem_chunks {
+                    EitherOrBoth::Both(mem_init_chunk, mem_finalize_chunk) => {
+                        (mem_init_chunk, mem_finalize_chunk)
+                    }
+                    EitherOrBoth::Left(mem_init_chunk) => (mem_init_chunk, [].as_slice()),
+                    EitherOrBoth::Right(mem_finalize_chunk) => ([].as_slice(), mem_finalize_chunk),
+                };
+                let mut shard = ExecutionRecord::new(self.program.clone());
+                shard.global_memory_initialize_events.extend_from_slice(mem_init_chunk);
+                shard.public_values.previous_init_addr_bits = init_addr_bits;
+                if let Some(last_event) = mem_init_chunk.last() {
+                    let last_init_addr_bits = core::array::from_fn(|i| (last_event.addr >> i) & 1);
+                    init_addr_bits = last_init_addr_bits;
+                }
+                shard.public_values.last_init_addr_bits = init_addr_bits;
+
+                shard.global_memory_finalize_events.extend_from_slice(mem_finalize_chunk);
+                shard.public_values.previous_finalize_addr_bits = finalize_addr_bits;
+                if let Some(last_event) = mem_finalize_chunk.last() {
+                    let last_finalize_addr_bits =
+                        core::array::from_fn(|i| (last_event.addr >> i) & 1);
+                    finalize_addr_bits = last_finalize_addr_bits;
+                }
+                shard.public_values.last_finalize_addr_bits = finalize_addr_bits;
+
+                shards.push(shard);
+            }
+        }
+
+        shards
     }
 
     /// Return the number of rows needed for a chip, according to the proof shape specified in the
@@ -281,33 +278,33 @@ impl ExecutionRecord {
         !self.cpu_events.is_empty()
     }
 
-    // #[inline]
-    // /// Add a precompile event to the execution record.
-    // pub fn add_precompile_event(
-    //     &mut self,
-    //     syscall_code: SyscallCode,
-    //     syscall_event: SyscallEvent,
-    //     event: PrecompileEvent,
-    // ) {
-    //     self.precompile_events.add_event(syscall_code, syscall_event, event);
-    // }
-    //
-    // /// Get all the precompile events for a syscall code.
-    // #[inline]
-    // #[must_use]
-    // pub fn get_precompile_events(
-    //     &self,
-    //     syscall_code: SyscallCode,
-    // ) -> &Vec<(SyscallEvent, PrecompileEvent)> {
-    //     self.precompile_events.get_events(syscall_code).expect("Precompile events not found")
-    // }
-    //
-    // /// Get all the local memory events.
-    // #[inline]
-    // pub fn get_local_mem_events(&self) -> impl Iterator<Item=&MemoryLocalEvent> {
-    //     let precompile_local_mem_events = self.precompile_events.get_local_mem_events();
-    //     precompile_local_mem_events.chain(self.cpu_local_memory_access.iter())
-    // }
+    #[inline]
+    /// Add a precompile event to the execution record.
+    pub fn add_precompile_event(
+        &mut self,
+        syscall_code: SyscallCode,
+        syscall_event: SyscallEvent,
+        event: PrecompileEvent,
+    ) {
+        self.precompile_events.add_event(syscall_code, syscall_event, event);
+    }
+
+    /// Get all the precompile events for a syscall code.
+    #[inline]
+    #[must_use]
+    pub fn get_precompile_events(
+        &self,
+        syscall_code: SyscallCode,
+    ) -> &Vec<(SyscallEvent, PrecompileEvent)> {
+        self.precompile_events.get_events(syscall_code).expect("Precompile events not found")
+    }
+
+    /// Get all the local memory events.
+    #[inline]
+    pub fn get_local_mem_events(&self) -> impl Iterator<Item=&MemoryLocalEvent> {
+        let precompile_local_mem_events = self.precompile_events.get_local_mem_events();
+        precompile_local_mem_events.chain(self.cpu_local_memory_access.iter())
+    }
 }
 
 /// A memory access record.
@@ -320,6 +317,11 @@ pub struct MemoryAccessRecord {
     pub b: Option<MemoryRecordEnum>,
     /// The memory access of the `c` register.
     pub c: Option<MemoryRecordEnum>,
+    /// The memory access of the `hi` register and other special registers.
+    pub ah: Option<MemoryRecordEnum>,
+    /// The memory access of the special registers for syscalls.
+    /// todo: check if it's correct
+    pub s: Option<MemoryRecordEnum>,
     /// The memory access of the `memory` register.
     pub memory: Option<MemoryRecordEnum>,
 }
@@ -345,9 +347,9 @@ impl MachineRecord for ExecutionRecord {
         stats.insert("divrem_events".to_string(), self.divrem_events.len());
         stats.insert("lt_events".to_string(), self.lt_events.len());
 
-        // for (syscall_code, events) in self.precompile_events.iter() {
-        //     stats.insert(format!("syscall {syscall_code:?}"), events.len());
-        // }
+        for (syscall_code, events) in self.precompile_events.iter() {
+            stats.insert(format!("syscall {syscall_code:?}"), events.len());
+        }
 
         stats.insert(
             "global_memory_initialize_events".to_string(),
@@ -388,7 +390,7 @@ impl MachineRecord for ExecutionRecord {
         self.lt_events.append(&mut other.lt_events);
         self.syscall_events.append(&mut other.syscall_events);
 
-        // self.precompile_events.append(&mut other.precompile_events);
+        self.precompile_events.append(&mut other.precompile_events);
 
         if self.byte_lookups.is_empty() {
             self.byte_lookups = std::mem::take(&mut other.byte_lookups);
