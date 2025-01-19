@@ -586,8 +586,8 @@ impl<'a> Executor<'a> {
                 MemoryAccessPosition::A => self.memory_accesses.a = Some(record.into()),
                 MemoryAccessPosition::B => self.memory_accesses.b = Some(record.into()),
                 MemoryAccessPosition::C => self.memory_accesses.c = Some(record.into()),
-                MemoryAccessPosition::AH => self.memory_accesses.ah = Some(record.into()),
-                MemoryAccessPosition::S => self.memory_accesses.s = Some(record.into()),
+                MemoryAccessPosition::S1 => self.memory_accesses.s1 = Some(record.into()),
+                MemoryAccessPosition::S2 => self.memory_accesses.s2 = Some(record.into()),
                 MemoryAccessPosition::Memory => self.memory_accesses.memory = Some(record.into()),
             }
         }
@@ -622,13 +622,13 @@ impl<'a> Executor<'a> {
                     debug_assert!(self.memory_accesses.c.is_none());
                     self.memory_accesses.c = Some(record.into());
                 }
-                MemoryAccessPosition::AH => {
-                    debug_assert!(self.memory_accesses.ah.is_none());
-                    self.memory_accesses.ah = Some(record.into());
+                MemoryAccessPosition::S1 => {
+                    debug_assert!(self.memory_accesses.s1.is_none());
+                    self.memory_accesses.s1 = Some(record.into());
                 }
-                MemoryAccessPosition::S => {
-                    debug_assert!(self.memory_accesses.s.is_none());
-                    self.memory_accesses.s = Some(record.into());
+                MemoryAccessPosition::S2 => {
+                    debug_assert!(self.memory_accesses.s2.is_none());
+                    self.memory_accesses.s2 = Some(record.into());
                 }
                 MemoryAccessPosition::Memory => {
                     debug_assert!(self.memory_accesses.memory.is_none());
@@ -646,7 +646,7 @@ impl<'a> Executor<'a> {
     /// Write to a register A or AH
     pub fn rw(&mut self, register: Register, value: u32, position: MemoryAccessPosition) {
         // The only time we are writing to a register is when it is in operand A or AH.
-        debug_assert!(vec![MemoryAccessPosition::A, MemoryAccessPosition::AH, MemoryAccessPosition::S].contains(&position));
+        debug_assert!(vec![MemoryAccessPosition::A, MemoryAccessPosition::S1, MemoryAccessPosition::S2].contains(&position));
         // Register 0 should always be 0
         if register == Register::ZERO {
             self.mw_cpu(register as u32, 0, position);
@@ -667,6 +667,8 @@ impl<'a> Executor<'a> {
         a: u32,
         b: u32,
         c: u32,
+        s1: Option<u32>,
+        s2: Option<u32>,
         record: MemoryAccessRecord,
         exit_code: u32,
         lookup_id: LookupId,
@@ -691,6 +693,10 @@ impl<'a> Executor<'a> {
             b_record: record.b,
             c,
             c_record: record.c,
+            s1,
+            s1_record: record.s1,
+            s2,
+            s2_record: record.s2,
             memory_record: record.memory,
             exit_code,
             alu_lookup_id: lookup_id,
@@ -831,7 +837,7 @@ impl<'a> Executor<'a> {
     ) -> (Option<u32>, u32, u32, u32) {
         let hi = if op.opcode.is_use_lo_hi_alu() {
             self.rw(Register::LO, a, MemoryAccessPosition::A);
-            self.rw(Register::HI, hi, MemoryAccessPosition::AH);
+            self.rw(Register::HI, hi, MemoryAccessPosition::S1);
             Some(hi)
         } else {
             self.rw(rd.into(), a, MemoryAccessPosition::A);
@@ -914,7 +920,9 @@ impl<'a> Executor<'a> {
         let mut a = 0u32;
         let mut b = 0u32;
         let mut c = 0u32;
-        let hi: Option<u32>;
+        let mut s1 = None;
+        // todo: syscall write
+        let mut s2 = None;
 
         if self.executor_mode == ExecutorMode::Trace {
             self.memory_accesses = MemoryAccessRecord::default();
@@ -1035,7 +1043,8 @@ impl<'a> Executor<'a> {
 
                 // todo: update circuit
                 self.rw(Register::V0, a, MemoryAccessPosition::A);
-                self.rw(Register::A3, v1, MemoryAccessPosition::AH);
+                self.rw(Register::A3, v1, MemoryAccessPosition::S1);
+                s1 = Some(v1);
                 next_pc = precompile_next_pc;
                 self.state.clk += precompile_cycles;
                 exit_code = returned_exit_code;
@@ -1078,7 +1087,7 @@ impl<'a> Executor<'a> {
             | Opcode::OR
             | Opcode::XOR
             | Opcode::NOR => {
-                (hi, a, b, c) = self.execute_alu(instruction, lookup_id);
+                (s1, a, b, c) = self.execute_alu(instruction, lookup_id);
             }
 
             // Load instructions.
@@ -1125,7 +1134,7 @@ impl<'a> Executor<'a> {
                 (a, b, c) = self.execute_ins(instruction);
             }
             Opcode::MADDU => {
-                (hi, a, b, c) = self.execute_maddu(instruction);
+                (s1, a, b, c) = self.execute_maddu(instruction);
             }
             Opcode::ROR => {
                 (a, b, c) = self.execute_ror(instruction);
@@ -1163,6 +1172,8 @@ impl<'a> Executor<'a> {
                 a,
                 b,
                 c,
+                s1,
+                s2,
                 self.memory_accesses,
                 exit_code,
                 lookup_id,
@@ -1173,15 +1184,17 @@ impl<'a> Executor<'a> {
     }
 
     fn execute_ext(&mut self, instruction: &Instruction) -> (u32, u32, u32) {
-        let (rd, rs, msbd, lsb) = (
+        let (rd, rs) = (
             instruction.op_a.into(),
             (instruction.op_b as u8).into(),
-            instruction.op_c as u8,
-            instruction.op_d as u8,
         );
-        assert!(msbd + lsb < 32);
+        let insn = instruction.raw.expect("should exist");
+        let msb = ((insn >> 11) & 0x1F).to_le_bytes()[0];
+        let lsb = ((insn >> 6) & 0x1F).to_le_bytes()[0];
+
+        assert!(msb + lsb < 32);
         let b = self.rr(rs, MemoryAccessPosition::B);
-        let mask_msb = (1 << (msbd + lsb + 1)) - 1;
+        let mask_msb = (1 << (msb + lsb + 1)) - 1;
         let a = (b & mask_msb) >> lsb;
 
         self.rw(rd, a, MemoryAccessPosition::A);
@@ -1189,12 +1202,13 @@ impl<'a> Executor<'a> {
     }
 
     fn execute_ins(&mut self, instruction: &Instruction) -> (u32, u32, u32) {
-        let (rd, rs, msb, lsb) = (
+        let (rd, rs) = (
             instruction.op_a.into(),
             (instruction.op_b as u8).into(),
-            instruction.op_c as u8,
-            instruction.op_d as u8,
         );
+        let insn = instruction.raw.expect("should exist");
+        let msb = ((insn >> 11) & 0x1F).to_le_bytes()[0];
+        let lsb = ((insn >> 6) & 0x1F).to_le_bytes()[0];
         assert!(msb < 32);
         assert!(lsb <= msb);
         let rt = self.register(rd);
@@ -1307,7 +1321,7 @@ impl<'a> Executor<'a> {
         let a = result as u32;
         let hi = (result >> 32) as u32;
         self.rw(Register::LO, a, MemoryAccessPosition::A);
-        self.rw(Register::HI, hi, MemoryAccessPosition::AH);
+        self.rw(Register::HI, hi, MemoryAccessPosition::S1);
 
         (Some(hi), a, b, c)
     }
@@ -2290,9 +2304,9 @@ mod tests {
         //     addi x30, x0, 37
         //     add RA, x30, x29
         let instructions = vec![
-            Instruction::new(Opcode::ADD, 29, 0, 5, 0, false, true),
-            Instruction::new(Opcode::ADD, 30, 0, 37, 0, false, true),
-            Instruction::new(Opcode::ADD, 31, 30, 29, 0, false, false),
+            Instruction::new(Opcode::ADD, 29, 0, 5, false, true),
+            Instruction::new(Opcode::ADD, 30, 0, 37, false, true),
+            Instruction::new(Opcode::ADD, 31, 30, 29, false, false),
         ];
         let program = Program::new(instructions, 0, 0);
         let mut runtime = Executor::new(program, ZKMCoreOpts::default());
@@ -2306,9 +2320,9 @@ mod tests {
         //     addi x30, x0, 37
         //     sub RA, x30, x29
         let instructions = vec![
-            Instruction::new(Opcode::ADD, 29, 0, 5, 0, false, true),
-            Instruction::new(Opcode::ADD, 30, 0, 37, 0, false, true),
-            Instruction::new(Opcode::SUB, 31, 30, 29, 0, false, false),
+            Instruction::new(Opcode::ADD, 29, 0, 5, false, true),
+            Instruction::new(Opcode::ADD, 30, 0, 37, false, true),
+            Instruction::new(Opcode::SUB, 31, 30, 29, false, false),
         ];
         let program = Program::new(instructions, 0, 0);
 
@@ -2323,9 +2337,9 @@ mod tests {
         //     addi x30, x0, 37
         //     xor RA, x30, x29
         let instructions = vec![
-            Instruction::new(Opcode::ADD, 29, 0, 5, 0, false, true),
-            Instruction::new(Opcode::ADD, 30, 0, 37, 0, false, true),
-            Instruction::new(Opcode::XOR, 31, 30, 29, 0, false, false),
+            Instruction::new(Opcode::ADD, 29, 0, 5, false, true),
+            Instruction::new(Opcode::ADD, 30, 0, 37, false, true),
+            Instruction::new(Opcode::XOR, 31, 30, 29, false, false),
         ];
         let program = Program::new(instructions, 0, 0);
 
@@ -2340,9 +2354,9 @@ mod tests {
         //     addi x30, x0, 37
         //     or RA, x30, x29
         let instructions = vec![
-            Instruction::new(Opcode::ADD, 29, 0, 5, 0, false, true),
-            Instruction::new(Opcode::ADD, 30, 0, 37, 0, false, true),
-            Instruction::new(Opcode::OR, 31, 30, 29, 0, false, false),
+            Instruction::new(Opcode::ADD, 29, 0, 5, false, true),
+            Instruction::new(Opcode::ADD, 30, 0, 37, false, true),
+            Instruction::new(Opcode::OR, 31, 30, 29, false, false),
         ];
         let program = Program::new(instructions, 0, 0);
 
@@ -2358,9 +2372,9 @@ mod tests {
         //     addi x30, x0, 37
         //     and RA, x30, x29
         let instructions = vec![
-            Instruction::new(Opcode::ADD, 29, 0, 5, 0, false, true),
-            Instruction::new(Opcode::ADD, 30, 0, 37, 0, false, true),
-            Instruction::new(Opcode::AND, 31, 30, 29, 0, false, false),
+            Instruction::new(Opcode::ADD, 29, 0, 5, false, true),
+            Instruction::new(Opcode::ADD, 30, 0, 37, false, true),
+            Instruction::new(Opcode::AND, 31, 30, 29, false, false),
         ];
         let program = Program::new(instructions, 0, 0);
 
@@ -2375,9 +2389,9 @@ mod tests {
         //     addi x30, x0, 37
         //     sll RA, x30, x29
         let instructions = vec![
-            Instruction::new(Opcode::ADD, 29, 0, 5, 0, false, true),
-            Instruction::new(Opcode::ADD, 30, 0, 37, 0, false, true),
-            Instruction::new(Opcode::SLL, 31, 30, 29, 0, false, false)
+            Instruction::new(Opcode::ADD, 29, 0, 5, false, true),
+            Instruction::new(Opcode::ADD, 30, 0, 37, false, true),
+            Instruction::new(Opcode::SLL, 31, 30, 29, false, false)
         ];
         let program = Program::new(instructions, 0, 0);
 
@@ -2392,9 +2406,9 @@ mod tests {
         //     addi x30, x0, 37
         //     srl RA, x30, x29
         let instructions = vec![
-            Instruction::new(Opcode::ADD, 29, 0, 5, 0, false, true),
-            Instruction::new(Opcode::ADD, 30, 0, 37, 0, false, true),
-            Instruction::new(Opcode::SRL, 31, 30, 29, 0, false, false)
+            Instruction::new(Opcode::ADD, 29, 0, 5, false, true),
+            Instruction::new(Opcode::ADD, 30, 0, 37, false, true),
+            Instruction::new(Opcode::SRL, 31, 30, 29, false, false)
         ];
         let program = Program::new(instructions, 0, 0);
 
@@ -2409,9 +2423,9 @@ mod tests {
         //     addi x30, x0, 37
         //     sra RA, x30, x29
         let instructions = vec![
-            Instruction::new(Opcode::ADD, 29, 0, 5, 0, false, true),
-            Instruction::new(Opcode::ADD, 30, 0, 37, 0, false, true),
-            Instruction::new(Opcode::SRA, 31, 30, 29, 0, false, false)
+            Instruction::new(Opcode::ADD, 29, 0, 5, false, true),
+            Instruction::new(Opcode::ADD, 30, 0, 37, false, true),
+            Instruction::new(Opcode::SRA, 31, 30, 29, false, false)
         ];
         let program = Program::new(instructions, 0, 0);
 
@@ -2426,9 +2440,9 @@ mod tests {
         //     addi x30, x0, 37
         //     slt RA, x30, x29
         let instructions = vec![
-            Instruction::new(Opcode::ADD, 29, 0, 5, 0, false, true),
-            Instruction::new(Opcode::ADD, 30, 0, 37, 0, false, true),
-            Instruction::new(Opcode::SLT, 31, 30, 29, 0, false, false),
+            Instruction::new(Opcode::ADD, 29, 0, 5, false, true),
+            Instruction::new(Opcode::ADD, 30, 0, 37, false, true),
+            Instruction::new(Opcode::SLT, 31, 30, 29, false, false),
         ];
         let program = Program::new(instructions, 0, 0);
 
@@ -2443,9 +2457,9 @@ mod tests {
         //     addi x30, x0, 37
         //     sltu RA, x30, x29
         let instructions = vec![
-            Instruction::new(Opcode::ADD, 29, 0, 5, 0, false, true),
-            Instruction::new(Opcode::ADD, 30, 0, 37, 0, false, true),
-            Instruction::new(Opcode::SLTU, 31, 30, 29, 0, false, false),
+            Instruction::new(Opcode::ADD, 29, 0, 5, false, true),
+            Instruction::new(Opcode::ADD, 30, 0, 37, false, true),
+            Instruction::new(Opcode::SLTU, 31, 30, 29, false, false),
         ];
         let program = Program::new(instructions, 0, 0);
 
@@ -2460,9 +2474,9 @@ mod tests {
         //     addi x30, x29, 37
         //     addi RA, x30, 42
         let instructions = vec![
-            Instruction::new(Opcode::ADD, 29, 0, 5, 0, false, true),
-            Instruction::new(Opcode::ADD, 30, 29, 37, 0, false, true),
-            Instruction::new(Opcode::ADD, 31, 30, 42, 0, false, true),
+            Instruction::new(Opcode::ADD, 29, 0, 5, false, true),
+            Instruction::new(Opcode::ADD, 30, 29, 37, false, true),
+            Instruction::new(Opcode::ADD, 31, 30, 42, false, true),
         ];
         let program = Program::new(instructions, 0, 0);
 
@@ -2477,9 +2491,9 @@ mod tests {
         //     addi x30, x29, -1
         //     addi RA, x30, 4
         let instructions = vec![
-            Instruction::new(Opcode::ADD, 29, 0, 5, 0, false, true),
-            Instruction::new(Opcode::ADD, 30, 29, 0xFFFF_FFFF, 0, false, true),
-            Instruction::new(Opcode::ADD, 31, 30, 4, 0, false, true),
+            Instruction::new(Opcode::ADD, 29, 0, 5, false, true),
+            Instruction::new(Opcode::ADD, 30, 29, 0xFFFF_FFFF, false, true),
+            Instruction::new(Opcode::ADD, 31, 30, 4, false, true),
         ];
         let program = Program::new(instructions, 0, 0);
         let mut runtime = Executor::new(program, ZKMCoreOpts::default());
@@ -2493,9 +2507,9 @@ mod tests {
         //     xori x30, x29, 37
         //     xori RA, x30, 42
         let instructions = vec![
-            Instruction::new(Opcode::ADD, 29, 0, 5, 0, false, true),
-            Instruction::new(Opcode::XOR, 30, 29, 37, 0, false, true),
-            Instruction::new(Opcode::XOR, 31, 30, 42, 0, false, true),
+            Instruction::new(Opcode::ADD, 29, 0, 5, false, true),
+            Instruction::new(Opcode::XOR, 30, 29, 37, false, true),
+            Instruction::new(Opcode::XOR, 31, 30, 42, false, true),
         ];
         let program = Program::new(instructions, 0, 0);
         let mut runtime = Executor::new(program, ZKMCoreOpts::default());
@@ -2509,9 +2523,9 @@ mod tests {
         //     ori x30, x29, 37
         //     ori RA, x30, 42
         let instructions = vec![
-            Instruction::new(Opcode::ADD, 29, 0, 5, 0, false, true),
-            Instruction::new(Opcode::OR, 30, 29, 37, 0, false, true),
-            Instruction::new(Opcode::OR, 31, 30, 42, 0, false, true),
+            Instruction::new(Opcode::ADD, 29, 0, 5, false, true),
+            Instruction::new(Opcode::OR, 30, 29, 37, false, true),
+            Instruction::new(Opcode::OR, 31, 30, 42, false, true),
         ];
         let program = Program::new(instructions, 0, 0);
         let mut runtime = Executor::new(program, ZKMCoreOpts::default());
@@ -2525,9 +2539,9 @@ mod tests {
         //     andi x30, x29, 37
         //     andi RA, x30, 42
         let instructions = vec![
-            Instruction::new(Opcode::ADD, 29, 0, 5, 0, false, true),
-            Instruction::new(Opcode::AND, 30, 29, 37, 0, false, true),
-            Instruction::new(Opcode::AND, 31, 30, 42, 0, false, true),
+            Instruction::new(Opcode::ADD, 29, 0, 5, false, true),
+            Instruction::new(Opcode::AND, 30, 29, 37, false, true),
+            Instruction::new(Opcode::AND, 31, 30, 42, false, true),
         ];
         let program = Program::new(instructions, 0, 0);
         let mut runtime = Executor::new(program, ZKMCoreOpts::default());
@@ -2540,8 +2554,8 @@ mod tests {
         //     addi x29, x0, 5
         //     slli RA, x29, 37
         let instructions = vec![
-            Instruction::new(Opcode::ADD, 29, 0, 5, 0, false, true),
-            Instruction::new(Opcode::SLL, 31, 29, 4, 0, false, true),
+            Instruction::new(Opcode::ADD, 29, 0, 5, false, true),
+            Instruction::new(Opcode::SLL, 31, 29, 4, false, true),
         ];
         let program = Program::new(instructions, 0, 0);
         let mut runtime = Executor::new(program, ZKMCoreOpts::default());
@@ -2554,8 +2568,8 @@ mod tests {
         //    addi x29, x0, 5
         //    srli RA, x29, 37
         let instructions = vec![
-            Instruction::new(Opcode::ADD, 29, 0, 42, 0, false, true),
-            Instruction::new(Opcode::SRL, 31, 29, 4, 0, false, true),
+            Instruction::new(Opcode::ADD, 29, 0, 42, false, true),
+            Instruction::new(Opcode::SRL, 31, 29, 4, false, true),
         ];
         let program = Program::new(instructions, 0, 0);
         let mut runtime = Executor::new(program, ZKMCoreOpts::default());
@@ -2568,8 +2582,8 @@ mod tests {
         //   addi x29, x0, 5
         //   srai RA, x29, 37
         let instructions = vec![
-            Instruction::new(Opcode::ADD, 29, 0, 42, 0, false, true),
-            Instruction::new(Opcode::SRA, 31, 29, 4, 0, false, true),
+            Instruction::new(Opcode::ADD, 29, 0, 42, false, true),
+            Instruction::new(Opcode::SRA, 31, 29, 4, false, true),
         ];
         let program = Program::new(instructions, 0, 0);
         let mut runtime = Executor::new(program, ZKMCoreOpts::default());
@@ -2582,8 +2596,8 @@ mod tests {
         //   addi x29, x0, 5
         //   slti RA, x29, 37
         let instructions = vec![
-            Instruction::new(Opcode::ADD, 29, 0, 42, 0, false, true),
-            Instruction::new(Opcode::SLT, 31, 29, 37, 0, false, true),
+            Instruction::new(Opcode::ADD, 29, 0, 42, false, true),
+            Instruction::new(Opcode::SLT, 31, 29, 37, false, true),
         ];
         let program = Program::new(instructions, 0, 0);
         let mut runtime = Executor::new(program, ZKMCoreOpts::default());
@@ -2596,8 +2610,8 @@ mod tests {
         //   addi x29, x0, 5
         //   sltiu RA, x29, 37
         let instructions = vec![
-            Instruction::new(Opcode::ADD, 29, 0, 42, 0, false, true),
-            Instruction::new(Opcode::SLTU, 31, 29, 37, 0, false, true),
+            Instruction::new(Opcode::ADD, 29, 0, 42, false, true),
+            Instruction::new(Opcode::SLTU, 31, 29, 37, false, true),
         ];
         let program = Program::new(instructions, 0, 0);
         let mut runtime = Executor::new(program, ZKMCoreOpts::default());
