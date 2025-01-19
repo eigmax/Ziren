@@ -8,8 +8,6 @@ use crate::{
 /// Emits the dependencies for division and remainder operations.
 #[allow(clippy::too_many_lines)]
 pub fn emit_divrem_dependencies(executor: &mut Executor, event: AluEvent) {
-    todo!("impl")
-    /*
     let shard = executor.shard();
     let (quotient, remainder) = get_quotient_and_remainder(event.b, event.c, event.opcode);
     let c_msb = get_msb(event.c);
@@ -116,7 +114,6 @@ pub fn emit_divrem_dependencies(executor: &mut Executor, event: AluEvent) {
     if event.c != 0 {
         executor.record.lt_events.push(lt_event);
     }
-    */
 }
 
 /// Emit the dependencies for CPU events.
@@ -194,7 +191,8 @@ pub fn emit_cpu_dependencies(executor: &mut Executor, index: usize) {
 
     if instruction.is_branch_instruction() {
         let a_eq_b = event.a == event.b;
-        let use_signed_comparison = matches!(instruction.opcode, Opcode::BLT | Opcode::BGE);
+        //FIXME: handle signness
+        let use_signed_comparison = matches!(instruction.opcode, Opcode::BLTZ | Opcode::BGEZ);
         let a_lt_b = if use_signed_comparison {
             (event.a as i32) < (event.b as i32)
         } else {
@@ -237,9 +235,10 @@ pub fn emit_cpu_dependencies(executor: &mut Executor, index: usize) {
         let branching = match instruction.opcode {
             Opcode::BEQ => a_eq_b,
             Opcode::BNE => !a_eq_b,
-            // todo: fix
-            Opcode::BLT | Opcode::BLE => a_lt_b,
-            Opcode::BGE | Opcode::BGT => a_eq_b || a_gt_b,
+            Opcode::BLTZ => a_lt_b,
+            Opcode::BLEZ => a_lt_b || a_eq_b,
+            Opcode::BGTZ => a_gt_b,
+            Opcode::BGEZ => a_eq_b || a_gt_b,
             _ => unreachable!(),
         };
         if branching {
