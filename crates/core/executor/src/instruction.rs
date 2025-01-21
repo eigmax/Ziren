@@ -3,7 +3,7 @@
 use core::fmt::Debug;
 use serde::{Deserialize, Serialize};
 
-use crate::opcode;
+use crate::{opcode, sign_extend};
 use crate::opcode::Opcode;
 
 /// MIPS Instruction.
@@ -72,31 +72,17 @@ impl Instruction {
         matches!(
             self.opcode,
             Opcode::ADD
-                | Opcode::ADDU
-                | Opcode::ADDI
-                | Opcode::ADDIU
                 | Opcode::SUB
-                | Opcode::SUBU
                 | Opcode::MULT
                 | Opcode::MULTU
                 | Opcode::MUL
                 | Opcode::DIV
                 | Opcode::DIVU
-                | Opcode::SLLV
-                | Opcode::SRLV
-                | Opcode::SRAV
                 | Opcode::SLL
                 | Opcode::SRL
                 | Opcode::SRA
                 | Opcode::SLT
                 | Opcode::SLTU
-                | Opcode::SLTI
-                | Opcode::SLTIU
-                | Opcode::LUI
-                | Opcode::MFHI
-                | Opcode::MTHI
-                | Opcode::MFLO
-                | Opcode::MTLO
                 | Opcode::AND
                 | Opcode::OR
                 | Opcode::XOR
@@ -159,7 +145,9 @@ impl Instruction {
         let rd = ((insn >> 11) & 0x1F).to_le_bytes()[0];
         let sa = ((insn >> 6) & 0x1F).to_le_bytes()[0] as u32;
         let offset = insn & 0xffff; // as known as imm
+        let offset_ext16 = sign_extend::<16>(offset);
         let target = insn & 0x3ffffff;
+        let target_ext = sign_extend::<26>(target);
         log::trace!(
             "op {}, func {}, rt {}, rs {}, rd {}",
             opcode,
@@ -190,7 +178,7 @@ impl Instruction {
             //     rt,
             //     rd,
             // )), // ADDU: rd = rs+rt
-            (0b000000, 0b100001) => Ok(Self::new(Opcode::ADDU, rd, rs, rt, false, false)), // ADDU: rd = rs+rt
+            (0b000000, 0b100001) => Ok(Self::new(Opcode::ADD, rd, rs, rt, false, false)), // ADDU: rd = rs+rt
             // (0b000000, 0b100010) => {
             //     Ok(Operation::BinaryArithmetic(BinaryOperator::SUB, rs, rt, rd))
             // } // SUB: rd = rs-rt
@@ -203,7 +191,7 @@ impl Instruction {
             //     rt,
             //     rd,
             // )), // SUBU: rd = rs-rt
-            (0b000000, 0b100011) => Ok(Self::new(Opcode::SUBU, rd, rs, rt, false, false)), // SUBU: rd = rs-rt
+            (0b000000, 0b100011) => Ok(Self::new(Opcode::SUB, rd, rs, rt, false, false)), // SUBU: rd = rs-rt
             // (0b000000, 0b000000) => {
             //     Ok(Operation::BinaryArithmetic(BinaryOperator::SLL, sa, rt, rd))
             // } // SLL: rd = rt << sa
@@ -232,21 +220,21 @@ impl Instruction {
             //     rt,
             //     rd,
             // )), // SLLV: rd = rt << rs[4:0]
-            (0b000000, 0b000100) => Ok(Self::new(Opcode::SLLV, rd, rt, rs, false, false)), // SLLV: rd = rt << rs[4:0]
+            (0b000000, 0b000100) => Ok(Self::new(Opcode::SLL, rd, rt, rs, false, false)), // SLLV: rd = rt << rs[4:0]
             // (0b000000, 0b000110) => Ok(Operation::BinaryArithmetic(
             //     BinaryOperator::SRLV,
             //     rs,
             //     rt,
             //     rd,
             // )), // SRLV: rd = rt >> rs[4:0]
-            (0b000000, 0b000110) => Ok(Self::new(Opcode::SRLV, rd, rt, rs, false, false)), // SRLV: rd = rt >> rs[4:0]
+            (0b000000, 0b000110) => Ok(Self::new(Opcode::SRL, rd, rt, rs, false, false)), // SRLV: rd = rt >> rs[4:0]
             // (0b000000, 0b000111) => Ok(Operation::BinaryArithmetic(
             //     BinaryOperator::SRAV,
             //     rs,
             //     rt,
             //     rd,
             // )), // SRAV: rd = rt >> rs[4:0]
-            (0b000000, 0b000111) => Ok(Self::new(Opcode::SRAV, rd, rt, rs, false, false)), // SRAV: rd = rt >> rs[4:0]
+            (0b000000, 0b000111) => Ok(Self::new(Opcode::SRA, rd, rt, rs, false, false)), // SRAV: rd = rt >> rs[4:0]
             // (0b011100, 0b000010) => {
             //     Ok(Operation::BinaryArithmetic(BinaryOperator::MUL, rs, rt, rd))
             // } // MUL: rd = rt * rs
@@ -279,19 +267,19 @@ impl Instruction {
             // (0b000000, 0b010000) => {
             //     Ok(Operation::BinaryArithmetic(BinaryOperator::MFHI, 33, 0, rd))
             // } // MFHI: rd = hi
-            (0b000000, 0b010000) => Ok(Self::new(Opcode::MFHI, rd, 33, 0, false, true)), // MFHI: rd = hi
+            (0b000000, 0b010000) => Ok(Self::new(Opcode::ADD, rd, 33, 0, false, true)), // MFHI: rd = hi
             // (0b000000, 0b010001) => {
             //     Ok(Operation::BinaryArithmetic(BinaryOperator::MTHI, rs, 0, 33))
             // } // MTHI: hi = rs
-            (0b000000, 0b010001) => Ok(Self::new(Opcode::MTHI, 33, rs, 0, false, true)), // MTHI: hi = rs
+            (0b000000, 0b010001) => Ok(Self::new(Opcode::ADD, 33, rs, 0, false, true)), // MTHI: hi = rs
             // (0b000000, 0b010010) => {
             //     Ok(Operation::BinaryArithmetic(BinaryOperator::MFLO, 32, 0, rd))
             // } // MFLO: rd = lo
-            (0b000000, 0b010010) => Ok(Self::new(Opcode::MFLO, rd, 32, 0, false, true)), // MFLO: rd = lo
+            (0b000000, 0b010010) => Ok(Self::new(Opcode::ADD, rd, 32, 0, false, true)), // MFLO: rd = lo
             // (0b000000, 0b010011) => {
             //     Ok(Operation::BinaryArithmetic(BinaryOperator::MTLO, rs, 0, 32))
             // } // MTLO: lo = rs
-            (0b000000, 0b010011) => Ok(Self::new(Opcode::MTLO, 32, rs, 0, false, true)), // MTLO: lo = rs
+            (0b000000, 0b010011) => Ok(Self::new(Opcode::ADD, 32, rs, 0, false, true)), // MTLO: lo = rs
             // (0b000000, 0b001111) => Ok(Operation::Nop),                                  // SYNC
             (0b000000, 0b001111) => Ok(Self::new(Opcode::NOP, 0, 0, 0, true, true)), // SYNC
             // (0b011100, 0b100000) => Ok(Operation::Count(false, rs, rd)), // CLZ: rd = count_leading_zeros(rs)
@@ -309,7 +297,7 @@ impl Instruction {
                         Opcode::BGEZ,
                         rs as u8,
                         0u32,
-                        offset,
+                        offset_ext16,
                         false,
                         true,
                     ))
@@ -319,13 +307,13 @@ impl Instruction {
                         Opcode::BLTZ,
                         rs as u8,
                         0u32,
-                        offset,
+                        offset_ext16,
                         false,
                         true,
                     ))
                 } else if rt == 0x11 && rs == 0 {
                     // Ok(Operation::JumpDirect(31, offset)) // BAL
-                    Ok(Self::new(Opcode::JumpDirect, 31, offset, 0, true, true))
+                    Ok(Self::new(Opcode::JumpDirect, 31, offset_ext16, 0, true, true))
                 } else {
                     // todo: change to ProgramError later
                     // panic!("InvalidOpcode")
@@ -333,19 +321,19 @@ impl Instruction {
                 }
             }
             // (0x02, _) => Ok(Operation::Jumpi(0u8, target)), // J
-            (0x02, _) => Ok(Self::new(Opcode::Jumpi, 0u8, target, 0, true, true)), // J
+            (0x02, _) => Ok(Self::new(Opcode::Jumpi, 0u8, target_ext, 0, true, true)), // J
             // (0x03, _) => Ok(Operation::Jumpi(31u8, target)),                       // JAL
-            (0x03, _) => Ok(Self::new(Opcode::Jumpi, 31u8, target, 0, true, true)), // JAL
+            (0x03, _) => Ok(Self::new(Opcode::Jumpi, 31u8, target_ext, 0, true, true)), // JAL
             // (0x04, _) => Ok(Operation::Branch(BranchCond::EQ, rs, rt, offset)),     // BEQ
-            (0x04, _) => Ok(Self::new(Opcode::BEQ, rs as u8, rt, offset, false, true)), // BEQ
+            (0x04, _) => Ok(Self::new(Opcode::BEQ, rs as u8, rt, offset_ext16, false, true)), // BEQ
             // (0x05, _) => Ok(Operation::Branch(BranchCond::NE, rs, rt, offset)),         // BNE
-            (0x05, _) => Ok(Self::new(Opcode::BNE, rs as u8, rt, offset, false, true)), // BNE
+            (0x05, _) => Ok(Self::new(Opcode::BNE, rs as u8, rt, offset_ext16, false, true)), // BNE
             // (0x06, _) => Ok(Operation::Branch(BranchCond::LE, rs, 0u8, offset)),        // BLEZ
             (0x06, _) => Ok(Self::new(
                 Opcode::BLEZ,
                 rs as u8,
                 0u32,
-                offset,
+                offset_ext16,
                 false,
                 true,
             )), // BLEZ
@@ -354,45 +342,45 @@ impl Instruction {
                 Opcode::BGTZ,
                 rs as u8,
                 0u32,
-                offset,
+                offset_ext16,
                 true,
                 true,
             )), // BGTZ
 
             // (0b100000, _) => Ok(Operation::MloadGeneral(MemOp::LB, rs, rt, offset)),
-            (0b100000, _) => Ok(Self::new(Opcode::LB, rt as u8, rs, offset, false, true)),
+            (0b100000, _) => Ok(Self::new(Opcode::LB, rt as u8, rs, offset_ext16, false, true)),
             // (0b100001, _) => Ok(Operation::MloadGeneral(MemOp::LH, rs, rt, offset)),
-            (0b100001, _) => Ok(Self::new(Opcode::LH, rt as u8, rs, offset, false, true)),
+            (0b100001, _) => Ok(Self::new(Opcode::LH, rt as u8, rs, offset_ext16, false, true)),
             // (0b100010, _) => Ok(Operation::MloadGeneral(MemOp::LWL, rs, rt, offset)),
-            (0b100010, _) => Ok(Self::new(Opcode::LWL, rt as u8, rs, offset, false, true)),
+            (0b100010, _) => Ok(Self::new(Opcode::LWL, rt as u8, rs, offset_ext16, false, true)),
             // (0b100011, _) => Ok(Operation::MloadGeneral(MemOp::LW, rs, rt, offset)),
-            (0b100011, _) => Ok(Self::new(Opcode::LW, rt as u8, rs, offset, false, true)),
+            (0b100011, _) => Ok(Self::new(Opcode::LW, rt as u8, rs, offset_ext16, false, true)),
             // (0b100100, _) => Ok(Operation::MloadGeneral(MemOp::LBU, rs, rt, offset)),
-            (0b100100, _) => Ok(Self::new(Opcode::LBU, rt as u8, rs, offset, false, true)),
+            (0b100100, _) => Ok(Self::new(Opcode::LBU, rt as u8, rs, offset_ext16, false, true)),
             // (0b100101, _) => Ok(Operation::MloadGeneral(MemOp::LHU, rs, rt, offset)),
-            (0b100101, _) => Ok(Self::new(Opcode::LHU, rt as u8, rs, offset, false, true)),
+            (0b100101, _) => Ok(Self::new(Opcode::LHU, rt as u8, rs, offset_ext16, false, true)),
             // (0b100110, _) => Ok(Operation::MloadGeneral(MemOp::LWR, rs, rt, offset)),
-            (0b100110, _) => Ok(Self::new(Opcode::LWR, rt as u8, rs, offset, false, true)),
+            (0b100110, _) => Ok(Self::new(Opcode::LWR, rt as u8, rs, offset_ext16, false, true)),
             // (0b110000, _) => Ok(Operation::MloadGeneral(MemOp::LL, rs, rt, offset)),
-            (0b110000, _) => Ok(Self::new(Opcode::LL, rt as u8, rs, offset, false, true)),
+            (0b110000, _) => Ok(Self::new(Opcode::LL, rt as u8, rs, offset_ext16, false, true)),
             // (0b101000, _) => Ok(Operation::MstoreGeneral(MemOp::SB, rs, rt, offset)),
-            (0b101000, _) => Ok(Self::new(Opcode::SB, rt as u8, rs, offset, false, true)),
+            (0b101000, _) => Ok(Self::new(Opcode::SB, rt as u8, rs, offset_ext16, false, true)),
             // (0b101001, _) => Ok(Operation::MstoreGeneral(MemOp::SH, rs, rt, offset)),
-            (0b101001, _) => Ok(Self::new(Opcode::SH, rt as u8, rs, offset, false, true)),
+            (0b101001, _) => Ok(Self::new(Opcode::SH, rt as u8, rs, offset_ext16, false, true)),
             // (0b101010, _) => Ok(Operation::MstoreGeneral(MemOp::SWL, rs, rt, offset)),
-            (0b101010, _) => Ok(Self::new(Opcode::SWL, rt as u8, rs, offset, false, true)),
+            (0b101010, _) => Ok(Self::new(Opcode::SWL, rt as u8, rs, offset_ext16, false, true)),
             // (0b101011, _) => Ok(Operation::MstoreGeneral(MemOp::SW, rs, rt, offset)),
-            (0b101011, _) => Ok(Self::new(Opcode::SW, rt as u8, rs, offset, false, true)),
+            (0b101011, _) => Ok(Self::new(Opcode::SW, rt as u8, rs, offset_ext16, false, true)),
             // (0b101110, _) => Ok(Operation::MstoreGeneral(MemOp::SWR, rs, rt, offset)),
-            (0b101110, _) => Ok(Self::new(Opcode::SWR, rt as u8, rs, offset, false, true)),
+            (0b101110, _) => Ok(Self::new(Opcode::SWR, rt as u8, rs, offset_ext16, false, true)),
             // (0b111000, _) => Ok(Operation::MstoreGeneral(MemOp::SC, rs, rt, offset)),
-            (0b111000, _) => Ok(Self::new(Opcode::SC, rt as u8, rs, offset, false, true)),
+            (0b111000, _) => Ok(Self::new(Opcode::SC, rt as u8, rs, offset_ext16, false, true)),
             // (0b111101, _) => Ok(Operation::MstoreGeneral(MemOp::SDC1, rs, rt, offset)),
             (0b111101, _) => Ok(Self::new(
                 Opcode::SDC1,
                 rs as u8,
                 rt,
-                offset,
+                offset_ext16,
                 false,
                 true,
             )),
@@ -403,10 +391,10 @@ impl Instruction {
             //     offset,
             // )), // ADDI: rt = rs + sext(imm)
             (0b001000, _) => Ok(Self::new(
-                Opcode::ADDI,
+                Opcode::ADD,
                 rt as u8,
                 rs,
-                offset,
+                offset_ext16,
                 false,
                 true,
             )), // ADDI: rt = rs + sext(imm)
@@ -418,10 +406,10 @@ impl Instruction {
             //     offset,
             // )), // ADDIU: rt = rs + sext(imm)
             (0b001001, _) => Ok(Self::new(
-                Opcode::ADDIU,
+                Opcode::ADD,
                 rt as u8,
                 rs,
-                offset,
+                offset_ext16,
                 false,
                 true,
             )), // ADDIU: rt = rs + sext(imm)
@@ -433,10 +421,10 @@ impl Instruction {
             //     offset,
             // )), // SLTI: rt = rs < sext(imm)
             (0b001010, _) => Ok(Self::new(
-                Opcode::SLTI,
+                Opcode::SLT,
                 rt as u8,
                 rs,
-                offset,
+                offset_ext16,
                 false,
                 true,
             )), // SLTI: rt = rs < sext(imm)
@@ -448,10 +436,10 @@ impl Instruction {
             //     offset,
             // )), // SLTIU: rt = rs < sext(imm)
             (0b001011, _) => Ok(Self::new(
-                Opcode::SLTIU,
+                Opcode::SLTU,
                 rt as u8,
                 rs,
-                offset,
+                offset_ext16,
                 false,
                 true,
             )), // SLTIU: rt = rs < sext(imm)
@@ -475,7 +463,7 @@ impl Instruction {
             //     rt,
             //     offset,
             // )), // LUI: rt = imm << 16
-            (0b001111, _) => Ok(Self::new(Opcode::LUI, rt as u8, offset, 0, true, true)), // LUI: rt = imm << 16
+            (0b001111, _) => Ok(Self::new(Opcode::SLL, rt as u8, offset_ext16, 16, true, true)), // LUI: rt = imm << 16
             // (0b000000, 0b100100) => {
             //     Ok(Operation::BinaryArithmetic(BinaryOperator::AND, rs, rt, rd))
             // } // AND: rd = rs & rt

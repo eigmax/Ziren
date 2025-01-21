@@ -737,22 +737,22 @@ impl<'a> Executor<'a> {
             sub_lookups: self.record.create_lookup_ids(),
         };
         match opcode {
-            Opcode::ADD | Opcode::ADDI | Opcode::ADDU | Opcode::ADDIU => {
+            Opcode::ADD => {
                 self.record.add_events.push(event);
             }
-            Opcode::SUB | Opcode::SUBU => {
+            Opcode::SUB => {
                 self.record.sub_events.push(event);
             }
             Opcode::XOR | Opcode::OR | Opcode::AND | Opcode::NOR => {
                 self.record.bitwise_events.push(event);
             }
-            Opcode::SLL | Opcode::SLLV => {
+            Opcode::SLL => {
                 self.record.shift_left_events.push(event);
             }
-            Opcode::SRL | Opcode::SRA | Opcode::SRLV | Opcode::SRAV => {
+            Opcode::SRL | Opcode::SRA => {
                 self.record.shift_right_events.push(event);
             }
-            Opcode::SLT | Opcode::SLTU | Opcode::SLTI | Opcode::SLTIU => {
+            Opcode::SLT | Opcode::SLTU => {
                 self.record.lt_events.push(event);
             }
             Opcode::MUL | Opcode::MULT | Opcode::MULTU => {
@@ -849,42 +849,6 @@ impl<'a> Executor<'a> {
         }
 
         (hi, a, b, c)
-    }
-
-    /// Fetch the input operand values for a load instruction.
-    /// rs_reg,rt_reg,imm=a,b,c
-    fn load_rr(&mut self, instruction: &Instruction) -> (Register, u32, u32, u32, u32) {
-        let (rt_reg, rs_reg, offset) = (
-            instruction.op_a.into(),
-            (instruction.op_b as u8).into(),
-            instruction.op_c,
-        );
-        let rs = self.rr(rs_reg, MemoryAccessPosition::B);
-        let rt = self.rr(rt_reg, MemoryAccessPosition::A);
-
-        let virt_raw = rs.wrapping_add(sign_extend::<16>(offset));
-        let virt = virt_raw & 0xFFFF_FFFC;
-
-        let memory_value = self.mr_cpu(virt, MemoryAccessPosition::Memory);
-        (rt_reg, rt, virt_raw, offset, memory_value)
-    }
-
-    /// Fetch the input operand values for a store instruction.
-    fn store_rr(&mut self, instruction: &Instruction) -> (u32, u32, u32, u32, u32, Register) {
-        let (rt_reg, rs_reg, offset) = (
-            instruction.op_a.into(),
-            (instruction.op_b as u8).into(),
-            instruction.op_c,
-        );
-        let rs = self.rr(rs_reg, MemoryAccessPosition::B);
-        let rt = self.rr(rt_reg, MemoryAccessPosition::A);
-
-        let virt_raw = rs.wrapping_add(sign_extend::<16>(offset));
-        let virt = virt_raw & 0xFFFF_FFFC;
-
-        let memory_value = self.word(virt);
-
-        (rt, rs, virt_raw, offset, memory_value, rt_reg)
     }
 
     /// Fetch the input operand values for a branch instruction.
@@ -1058,31 +1022,17 @@ impl<'a> Executor<'a> {
 
             // Arithmetic instructions
             Opcode::ADD
-            | Opcode::ADDU
-            | Opcode::ADDI
-            | Opcode::ADDIU
             | Opcode::SUB
-            | Opcode::SUBU
             | Opcode::MULT
             | Opcode::MULTU
             | Opcode::MUL
             | Opcode::DIV
             | Opcode::DIVU
-            | Opcode::SLLV
-            | Opcode::SRLV
-            | Opcode::SRAV
             | Opcode::SLL
             | Opcode::SRL
             | Opcode::SRA
             | Opcode::SLT
             | Opcode::SLTU
-            | Opcode::SLTI
-            | Opcode::SLTIU
-            | Opcode::LUI
-            | Opcode::MFHI
-            | Opcode::MTHI
-            | Opcode::MFLO
-            | Opcode::MTLO
             | Opcode::AND
             | Opcode::OR
             | Opcode::XOR
@@ -1371,29 +1321,11 @@ impl<'a> Executor<'a> {
         let (rd, b, c) = self.alu_rr(instruction);
         let (a, hi) = match instruction.opcode {
             Opcode::ADD => (b.overflowing_add(c).0, 0),
-            Opcode::ADDU => (b.overflowing_add(c).0, 0),
-            Opcode::ADDI => {
-                let sein = sign_extend::<16>(c);
-                (b.overflowing_add(sein).0, 0)
-            }
-            Opcode::ADDIU => {
-                let sein = sign_extend::<16>(c);
-                (b.overflowing_add(sein).0, 0)
-            }
             Opcode::SUB => (b.overflowing_sub(c).0, 0),
-            Opcode::SUBU => (b.overflowing_sub(c).0, 0),
 
-            Opcode::SLL => (if c > 31 { 0 } else { b << c }, 0),
-            Opcode::SRL => (if c > 31 { 0 } else { b >> c }, 0),
+            Opcode::SLL => (b << (c & 0x1f), 0),
+            Opcode::SRL => (b >> (c & 0x1F), 0),
             Opcode::SRA => {
-                let sin = b as i32;
-                let sout = if c > 31 { 0 } else { sin >> c };
-                (sout as u32, 0)
-            }
-
-            Opcode::SLLV => (b << (c & 0x1f), 0),
-            Opcode::SRLV => (b >> (c & 0x1F), 0),
-            Opcode::SRAV => {
                 // same as SRA
                 let sin = b as i32;
                 let sout = sin >> (c & 0x1f);
@@ -1414,26 +1346,6 @@ impl<'a> Executor<'a> {
                     (0, 0)
                 }
             }
-            Opcode::SLTIU => {
-                let out = sign_extend::<16>(c);
-                if b < out {
-                    (1, 0)
-                } else {
-                    (0, 0)
-                }
-            }
-            Opcode::SLTI => {
-                let out = sign_extend::<16>(c);
-                if (b as i32) < (out as i32) {
-                    (1, 0)
-                } else {
-                    (0, 0)
-                }
-            }
-            Opcode::LUI => {
-                let out = sign_extend::<16>(b);
-                (out.overflowing_shl(16).0, 0)
-            }
 
             Opcode::MULT => {
                 let out = (((b as i32) as i64) * ((c as i32) as i64)) as u64;
@@ -1448,7 +1360,6 @@ impl<'a> Executor<'a> {
                 ((b as i32) % (c as i32)) as u32, // hi
             ),
             Opcode::DIVU => (b / c, b % c), //lo,hi
-            Opcode::MFHI | Opcode::MTHI | Opcode::MFLO | Opcode::MTLO => (b, 0),
             Opcode::AND => (b & c, 0),
             Opcode::OR => (b | c, 0),
             Opcode::XOR => (b ^ c, 0),
@@ -1465,7 +1376,7 @@ impl<'a> Executor<'a> {
         &mut self,
         instruction: &Instruction,
     ) -> Result<(u32, u32, u32), ExecutionError> {
-        let (rt_reg, rs_reg, offset) = (
+        let (rt_reg, rs_reg, offset_ext) = (
             instruction.op_a.into(),
             (instruction.op_b as u8).into(),
             instruction.op_c,
@@ -1475,7 +1386,7 @@ impl<'a> Executor<'a> {
         // and we could use the `prev_value` of the MemoryWriteRecord in the circuit.
         let rt = self.register(rt_reg);
 
-        let virt_raw = rs.wrapping_add(sign_extend::<16>(offset));
+        let virt_raw = rs.wrapping_add(offset_ext);
         let virt = virt_raw & 0xFFFF_FFFC;
 
         let mem = self.mr_cpu(virt, MemoryAccessPosition::Memory);
@@ -1519,14 +1430,14 @@ impl<'a> Executor<'a> {
             _ => unreachable!(),
         };
         self.rw(rt_reg, val, MemoryAccessPosition::A);
-        Ok((val, rs, offset))
+        Ok((val, rs, offset_ext))
     }
 
     fn execute_store(
         &mut self,
         instruction: &Instruction,
     ) -> Result<(u32, u32, u32), ExecutionError> {
-        let (rt_reg, rs_reg, offset) = (
+        let (rt_reg, rs_reg, offset_ext) = (
             instruction.op_a.into(),
             (instruction.op_b as u8).into(),
             instruction.op_c,
@@ -1539,7 +1450,7 @@ impl<'a> Executor<'a> {
             self.rr(rt_reg, MemoryAccessPosition::A)
         };
 
-        let virt_raw = rs.wrapping_add(sign_extend::<16>(offset));
+        let virt_raw = rs.wrapping_add(offset_ext);
         let virt = virt_raw & 0xFFFF_FFFC;
 
         let mem = self.word(virt);
@@ -1590,9 +1501,9 @@ impl<'a> Executor<'a> {
         if instruction.opcode == Opcode::SC {
             self.rw(rt_reg, 1, MemoryAccessPosition::A);
 
-            Ok((val, rs, offset))
+            Ok((val, rs, offset_ext))
         } else {
-            Ok((rt, rs, offset))
+            Ok((rt, rs, offset_ext))
         }
     }
 
@@ -1602,7 +1513,7 @@ impl<'a> Executor<'a> {
         next_pc: u32,
         mut next_next_pc: u32,
     ) -> (u32, u32, u32, u32) {
-        let (src1, src2, target) = self.branch_rr(instruction);
+        let (src1, src2, target_ext) = self.branch_rr(instruction);
         let should_jump = match instruction.opcode {
             Opcode::BEQ => src1 == src2,
             Opcode::BNE => src1 != src2,
@@ -1615,13 +1526,12 @@ impl<'a> Executor<'a> {
             }
         };
 
-        let target = sign_extend::<16>(target);
-        let (mut target_pc, _) = target.overflowing_shl(2);
+        let (mut target_pc, _) = target_ext.overflowing_shl(2);
 
         if should_jump {
             next_next_pc = target_pc.wrapping_add(next_pc);
         }
-        (src1, src2, target, next_next_pc)
+        (src1, src2, target_ext, next_next_pc)
     }
 
     fn execute_jump(&mut self, instruction: &Instruction) -> (u32, u32, u32, u32) {
@@ -1651,10 +1561,9 @@ impl<'a> Executor<'a> {
         (next_pc, target, c, target_pc)
     }
     fn execute_jump_direct(&mut self, instruction: &Instruction) -> (u32, u32, u32, u32) {
-        let (link, imm, c) = (instruction.op_a.into(), instruction.op_b, instruction.op_c);
+        let (link, target_ext, c) = (instruction.op_a.into(), instruction.op_b, instruction.op_c);
 
-        let target = sign_extend::<16>(imm);
-        let (target_pc, _) = target.overflowing_shl(2);
+        let (target_pc, _) = target_ext.overflowing_shl(2);
         //todo: check if necessary
         // self.rw(Register::ZERO, target_pc);
         let pc = self.state.pc;
@@ -1663,7 +1572,7 @@ impl<'a> Executor<'a> {
         let next_pc = pc.wrapping_add(8);
         self.rw(link, next_pc, MemoryAccessPosition::A);
 
-        (next_pc, imm, c, target_pc)
+        (next_pc, target_ext, c, target_pc)
     }
 
     /// Executes one cycle of the program, returning whether the program has finished.
@@ -1695,11 +1604,7 @@ impl<'a> Executor<'a> {
             if self.state.global_clk % 16 == 0 {
                 // todo: MFHI/MTHI/MFLO/MTLO/LUI or others?
                 let addsub_count = (self.report.event_counts[Opcode::ADD]
-                    + self.report.event_counts[Opcode::ADDI]
-                    + self.report.event_counts[Opcode::ADDU]
-                    + self.report.event_counts[Opcode::ADDIU]
-                    + self.report.event_counts[Opcode::SUB]
-                    + self.report.event_counts[Opcode::SUBU])
+                    + self.report.event_counts[Opcode::SUB])
                     as usize;
                 let mul_count = (self.report.event_counts[Opcode::MUL]
                     + self.report.event_counts[Opcode::MULT]
@@ -1710,21 +1615,15 @@ impl<'a> Executor<'a> {
                     + self.report.event_counts[Opcode::NOR]
                     + self.report.event_counts[Opcode::AND])
                     as usize;
-                let shift_left_count = (self.report.event_counts[Opcode::SLL]
-                    + self.report.event_counts[Opcode::SLLV])
-                    as usize;
+                let shift_left_count = self.report.event_counts[Opcode::SLL] as usize;
                 let shift_right_count = (self.report.event_counts[Opcode::SRL]
                     + self.report.event_counts[Opcode::SRA]
-                    + self.report.event_counts[Opcode::SRLV]
-                    + self.report.event_counts[Opcode::SRAV])
-                    as usize;
+                ) as usize;
                 let divrem_count = (self.report.event_counts[Opcode::DIV]
                     + self.report.event_counts[Opcode::DIVU])
                     as usize;
                 let lt_count = (self.report.event_counts[Opcode::SLT]
-                    + self.report.event_counts[Opcode::SLTU]
-                    + self.report.event_counts[Opcode::SLTIU]
-                    + self.report.event_counts[Opcode::SLTI])
+                    + self.report.event_counts[Opcode::SLTU])
                     as usize;
 
                 if let Some(maximal_shapes) = &self.maximal_shapes {
