@@ -1,0 +1,147 @@
+#![no_std]
+#![no_main]
+zkm2_zkvm::entrypoint!(main);
+
+use num::BigUint;
+//use rand::Rng;
+use zkm2_zkvm::syscalls::syscall_u256x2048_mul;
+
+fn u256_to_bytes_le(x: &BigUint) -> [u8; 32] {
+    let mut bytes = x.to_bytes_le();
+    bytes.resize(32, 0);
+    bytes.try_into().unwrap()
+}
+
+fn u2048_to_bytes_le(x: &BigUint) -> [u8; 256] {
+    let mut bytes = x.to_bytes_le();
+    bytes.resize(256, 0);
+    bytes.try_into().unwrap()
+}
+
+pub fn main() {
+    let mut a_max: [u8; 32] = [0xff; 32];
+    let mut b_max: [u8; 256] = [0xff; 256];
+
+    let a_max_big = BigUint::from_bytes_le(&a_max);
+    a_max = u256_to_bytes_le(&a_max_big);
+    let b_max_big = BigUint::from_bytes_le(&b_max);
+    b_max = u2048_to_bytes_le(&b_max_big);
+
+    let mut lo_max: [u32; 64] = [0; 64];
+    let mut hi_max: [u32; 8] = [0; 8];
+
+    let mut a_max_word: [u32; 8] = [0; 8];
+        for i in 0..8 {
+            a_max_word[i] = u32::from_le_bytes([
+                a_max[i * 4],
+                a_max[i * 4 + 1],
+                a_max[i * 4 + 2],
+                a_max[i * 4 + 3],
+            ]);
+        }
+
+    let mut b_max_word: [u32; 64] = [0; 64];
+        for i in 0..64 {
+            b_max_word[i] = u32::from_le_bytes([
+                b_max[i * 4],
+                b_max[i * 4 + 1],
+                b_max[i * 4 + 2],
+                b_max[i * 4 + 3],
+            ]);
+        }
+    
+    syscall_u256x2048_mul(
+        //a_max.as_ptr() as *const [u32; 8],
+        //b_max.as_ptr() as *const [u32; 64],
+        a_max_word.as_ptr() as *const [u32; 8],
+        b_max_word.as_ptr() as *const [u32; 64],
+        lo_max.as_mut_ptr() as *mut [u32; 64],
+        hi_max.as_mut_ptr() as *mut [u32; 8],
+    );
+
+    let mut lo_max_bytes: [u8; 256] = [0; 256];
+    for i in 0..64 {
+        lo_max_bytes[i*4..i*4+4].copy_from_slice(&lo_max[i].to_le_bytes()[0..]);
+    }
+
+    let mut hi_max_bytes: [u8; 32] = [0; 32];
+    for i in 0..8 {
+        hi_max_bytes[i*4..i*4+4].copy_from_slice(&hi_max[i].to_le_bytes()[0..]);
+    }
+
+    //let lo_max_bytes: [u8; 256] = bytemuck::cast::<[u32; 64], [u8; 256]>(lo_max);
+    //let hi_max_bytes: [u8; 32] = bytemuck::cast::<[u32; 8], [u8; 32]>(hi_max);
+
+    let lo_max_big = BigUint::from_bytes_le(&lo_max_bytes);
+    let hi_max_big = BigUint::from_bytes_le(&hi_max_bytes);
+
+    let result_max_syscall = (hi_max_big << 2048) + lo_max_big;
+    let result_max = a_max_big * b_max_big;
+    assert_eq!(result_max, result_max_syscall);
+
+    // Test 10 random pairs of a and b.
+    //let mut rng = rand::thread_rng();
+    for j in 0..10 {
+        let mut a: [u8; 32] = [0u8;32]; // rng.gen();
+        let mut b = [0u8; 256];
+        a[2+ 2 * j] = 1;
+        b[3 + 2*j] = 1;
+        //rng.fill(&mut b);
+
+        let a_big = BigUint::from_bytes_le(&a);
+        let b_big = BigUint::from_bytes_le(&b);
+
+        let a = u256_to_bytes_le(&a_big);
+        let b = u2048_to_bytes_le(&b_big);
+
+        let mut lo: [u32; 64] = [0; 64];
+        let mut hi: [u32; 8] = [0; 8];
+
+        let mut a_word: [u32; 8] = [0; 8];
+        for i in 0..8 {
+            a_word[i] = u32::from_le_bytes([
+                a[i * 4],
+                a[i * 4 + 1],
+                a[i * 4 + 2],
+                a[i * 4 + 3],
+            ]);
+        }
+
+    let mut b_word: [u32; 64] = [0; 64];
+        for i in 0..64 {
+            b_word[i] = u32::from_le_bytes([
+                b[i * 4],
+                b[i * 4 + 1],
+                b[i * 4 + 2],
+                b[i * 4 + 3],
+            ]);
+        }
+        syscall_u256x2048_mul(
+            a_word.as_ptr() as *const [u32; 8],
+            b_word.as_ptr() as *const [u32; 64],
+            lo.as_mut_ptr() as *mut [u32; 64],
+            hi.as_mut_ptr() as *mut [u32; 8],
+        );
+
+        let mut lo_bytes: [u8; 256] = [0; 256];
+        for i in 0..64 {
+            lo_bytes[i*4..i*4+4].copy_from_slice(&lo[i].to_le_bytes()[0..]);
+        }
+
+        let mut hi_bytes: [u8; 32] = [0; 32];
+        for i in 0..8 {
+            hi_bytes[i*4..i*4+4].copy_from_slice(&hi[i].to_le_bytes()[0..]);
+        }
+        //let lo_bytes: [u8; 256] = bytemuck::cast::<[u32; 64], [u8; 256]>(lo);
+        //let hi_bytes: [u8; 32] = bytemuck::cast::<[u32; 8], [u8; 32]>(hi);
+
+        let lo_big = BigUint::from_bytes_le(&lo_bytes);
+        let hi_big = BigUint::from_bytes_le(&hi_bytes);
+
+        let result_syscall = (hi_big << 2048) + lo_big;
+        let result = a_big * b_big;
+        assert_eq!(result, result_syscall);
+    }
+
+    // println!("All tests passed successfully!");
+}

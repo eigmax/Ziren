@@ -33,7 +33,7 @@ pub struct OpcodeSelectorCols<T> {
     pub is_alu: T,
 
     /// Table selectors for opcodes.
-    pub is_ecall: T,
+    pub is_syscall: T,
 
     /// Memory Instructions.
     pub is_lb: T,
@@ -60,11 +60,10 @@ pub struct OpcodeSelectorCols<T> {
     pub is_bgez: T,
 
     /// Jump Instructions.
-    pub is_jalr: T,
-    pub is_jal: T,
+    pub is_jump: T,
+    pub is_jumpd: T,
 
     /// Miscellaneous.
-    pub is_auipc: T,
     pub is_unimpl: T,
 }
 
@@ -75,8 +74,8 @@ impl<F: PrimeField> OpcodeSelectorCols<F> {
 
         if instruction.is_alu_instruction() {
             self.is_alu = F::ONE;
-        } else if instruction.is_ecall_instruction() {
-            self.is_ecall = F::ONE;
+        } else if instruction.is_syscall_instruction() {
+            self.is_syscall = F::ONE;
         } else if instruction.is_memory_instruction() {
             match instruction.opcode {
                 Opcode::LB => self.is_lb = F::ONE,
@@ -106,16 +105,11 @@ impl<F: PrimeField> OpcodeSelectorCols<F> {
                 _ => unreachable!(),
             }
         }
-        // else if instruction.opcode == Opcode::JAL {
-        //     self.is_jal = F::ONE;
-        // } else if instruction.opcode == Opcode::JALR {
-        //     self.is_jalr = F::ONE;
-        // }
-        //else if instruction.opcode == Opcode::AUIPC {
-        //    self.is_auipc = F::ONE;
-        //} else if instruction.opcode == Opcode::UNIMP {
-        //    self.is_unimpl = F::ONE;
-        //}
+        else if instruction.opcode == Opcode::Jump || instruction.opcode == Opcode::Jumpi{
+             self.is_jump = F::ONE;
+        } else if instruction.opcode == Opcode::JumpDirect {
+            self.is_jumpd = F::ONE;
+       }
     }
 }
 
@@ -128,7 +122,7 @@ impl<T> IntoIterator for OpcodeSelectorCols<T> {
             self.imm_b,
             self.imm_c,
             self.is_alu,
-            self.is_ecall,
+            self.is_syscall,
             self.is_lb,
             self.is_lbu,
             self.is_lh,
@@ -149,9 +143,8 @@ impl<T> IntoIterator for OpcodeSelectorCols<T> {
             self.is_blez,
             self.is_bgtz,
             self.is_bgez,
-            self.is_jalr,
-            self.is_jal,
-            self.is_auipc,
+            self.is_jump,
+            self.is_jumpd,
             self.is_unimpl,
         ];
         assert_eq!(columns.len(), NUM_OPCODE_SELECTOR_COLS);
