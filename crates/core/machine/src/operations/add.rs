@@ -28,6 +28,7 @@ impl<F: Field> AddOperation<F> {
     ) -> u32 {
         let expected = a_u32.wrapping_add(b_u32);
         self.value = Word::from(expected);
+
         let a = a_u32.to_le_bytes();
         let b = b_u32.to_le_bytes();
 
