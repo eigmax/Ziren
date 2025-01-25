@@ -168,13 +168,13 @@ impl CpuChip {
         // of the most significant byte to get it's sign.
         self.eval_most_sig_byte_bit_decomp(builder, memory_columns, local, &local.unsigned_mem_val);
 
-        //// Assert that correct value of `mem_value_is_neg_not_x0`.
-        //builder.assert_eq(
-        //    local.mem_value_is_neg_not_x0,
-        //    (local.selectors.is_lb + local.selectors.is_lh)
-        //        * memory_columns.most_sig_byte_decomp[7]
-        //        * (AB::Expr::ONE - local.instruction.op_a_0),
-        //);
+        // Assert that correct value of `mem_value_is_neg_not_x0`.
+        builder.assert_eq(
+            local.mem_value_is_neg_not_x0,
+            (local.selectors.is_lb + local.selectors.is_lh)
+                * memory_columns.most_sig_byte_decomp[7]
+                * (AB::Expr::ONE - local.instruction.op_a_0),
+        );
 
         // When the memory value is negative and not writing to x0, use the SUB opcode to compute
         // the signed value of the memory value and verify that the op_a value is correct.
@@ -194,26 +194,22 @@ impl CpuChip {
             local.mem_value_is_neg_not_x0,
         );
 
-        // FIXME: stephen
-        // // Assert that correct value of `mem_value_is_pos_not_x0`.
-        // let mem_value_is_pos = (local.selectors.is_lb + local.selectors.is_lh)
-        //     * (AB::Expr::ONE - memory_columns.most_sig_byte_decomp[7])
-        //     + local.selectors.is_lbu
-        //     + local.selectors.is_lhu
-        //     + local.selectors.is_lwl
-        //     + local.selectors.is_lwr
-        //     + local.selectors.is_ll
-        //     + local.selectors.is_lw;
-        // builder.assert_eq(
-        //     local.mem_value_is_pos_not_x0,
-        //     mem_value_is_pos * (AB::Expr::ONE - local.instruction.op_a_0),
-        // );
+        // Assert that correct value of `mem_value_is_pos_not_x0`.
+        let mem_value_is_pos = (local.selectors.is_lb + local.selectors.is_lh)
+            * (AB::Expr::ONE - memory_columns.most_sig_byte_decomp[7])
+            + local.selectors.is_lbu
+            + local.selectors.is_lhu
+            + local.selectors.is_lw;
+        builder.assert_eq(
+            local.mem_value_is_pos_not_x0,
+            mem_value_is_pos * (AB::Expr::ONE - local.instruction.op_a_0),
+        );
 
         // When the memory value is not positive and not writing to x0, assert that op_a value is
         // equal to the unsigned memory value.
-        //builder
-        //    .when(local.mem_value_is_pos_not_x0)
-        //    .assert_word_eq(local.unsigned_mem_val, local.op_a_val());
+        builder
+            .when(local.mem_value_is_pos_not_x0)
+            .assert_word_eq(local.unsigned_mem_val, local.op_a_val());
     }
 
     /// Evaluates constraints related to storing to memory.
@@ -240,44 +236,43 @@ impl CpuChip {
         let mem_val = *memory_columns.memory_access.value();
         let prev_mem_val = *memory_columns.memory_access.prev_value();
         let sb_expected_stored_value = Word([
-            a_val[0] * offset_is_zero.clone()
-                + (one.clone() - offset_is_zero.clone()) * prev_mem_val[0],
-            a_val[0] * memory_columns.offset_is_one
-                + (one.clone() - memory_columns.offset_is_one) * prev_mem_val[1],
-            a_val[0] * memory_columns.offset_is_two
-                + (one.clone() - memory_columns.offset_is_two) * prev_mem_val[2],
             a_val[0] * memory_columns.offset_is_three
-                + (one.clone() - memory_columns.offset_is_three) * prev_mem_val[3],
+                + (one.clone() - memory_columns.offset_is_three) * prev_mem_val[0],
+            a_val[0] * memory_columns.offset_is_two
+                + (one.clone() - memory_columns.offset_is_two) * prev_mem_val[1],
+            a_val[0] * memory_columns.offset_is_one
+                + (one.clone() - memory_columns.offset_is_one) * prev_mem_val[2],
+            a_val[0] * offset_is_zero.clone()
+                + (one.clone() - offset_is_zero.clone()) * prev_mem_val[3],
         ]);
 
-        //// FIXME: stephen add constraints for other instrs
-        //builder
-        //    .when(local.selectors.is_sb)
-        //    .assert_word_eq(mem_val.map(|x| x.into()), sb_expected_stored_value);
+        builder
+            .when(local.selectors.is_sb)
+            .assert_word_eq(mem_val.map(|x| x.into()), sb_expected_stored_value);
 
-        //// When the instruction is SH, make sure both offset one and three are off.
-        // FIXME stephen
-        //builder
-        //    .when(local.selectors.is_sh)
-        //    .assert_zero(memory_columns.offset_is_one + memory_columns.offset_is_three);
+        // FIXME: stephen add constraints for other instructions, LWR, LWL, LL, SWL, SWR, SC, SDC1.
+
+        // When the instruction is SH, make sure both offset one and three are off.
+        builder
+            .when(local.selectors.is_sh)
+            .assert_zero(memory_columns.offset_is_one + memory_columns.offset_is_three);
 
         // When the instruction is SW, ensure that the offset is 0.
         builder.when(local.selectors.is_sw).assert_one(offset_is_zero.clone());
 
         // Compute the expected stored value for a SH instruction.
-        let a_is_lower_half = offset_is_zero;
-        let a_is_upper_half = memory_columns.offset_is_two;
+        let a_is_lower_half = memory_columns.offset_is_two;
+        let a_is_upper_half = offset_is_zero;
         let sh_expected_stored_value = Word([
             a_val[0] * a_is_lower_half.clone()
                 + (one.clone() - a_is_lower_half.clone()) * prev_mem_val[0],
             a_val[1] * a_is_lower_half.clone() + (one.clone() - a_is_lower_half) * prev_mem_val[1],
-            a_val[0] * a_is_upper_half + (one.clone() - a_is_upper_half) * prev_mem_val[2],
-            a_val[1] * a_is_upper_half + (one.clone() - a_is_upper_half) * prev_mem_val[3],
+            a_val[0] * a_is_upper_half.clone() + (one.clone() - a_is_upper_half.clone()) * prev_mem_val[2],
+            a_val[1] * a_is_upper_half.clone() + (one.clone() - a_is_upper_half) * prev_mem_val[3],
         ]);
-        // FIXME stephen
-        //builder
-        //    .when(local.selectors.is_sh)
-        //    .assert_word_eq(mem_val.map(|x| x.into()), sh_expected_stored_value);
+        builder
+            .when(local.selectors.is_sh)
+            .assert_word_eq(mem_val.map(|x| x.into()), sh_expected_stored_value);
 
         // When the instruction is SW, just use the word without masking.
         builder
@@ -304,38 +299,48 @@ impl CpuChip {
             - memory_columns.offset_is_three;
 
         // Compute the byte value.
-        let mem_byte = mem_val[0] * offset_is_zero.clone()
-            + mem_val[1] * memory_columns.offset_is_one
-            + mem_val[2] * memory_columns.offset_is_two
-            + mem_val[3] * memory_columns.offset_is_three;
+        let mem_byte = mem_val[3] * offset_is_zero.clone()
+            + mem_val[2] * memory_columns.offset_is_one
+            + mem_val[1] * memory_columns.offset_is_two
+            + mem_val[0] * memory_columns.offset_is_three;
         let byte_value = Word::extend_expr::<AB>(mem_byte.clone());
 
-        // // When the instruction is LB or LBU, just use the lower byte.
-        // builder
-        //     .when(local.selectors.is_lb + local.selectors.is_lbu)
-        //     .assert_word_eq(byte_value, local.unsigned_mem_val.map(|x| x.into()));
+        // When the instruction is LB or LBU, just use the lower byte.
+        builder
+            .when(local.selectors.is_lb + local.selectors.is_lbu)
+            .assert_word_eq(byte_value, local.unsigned_mem_val.map(|x| x.into()));
 
         // When the instruction is LH or LHU, use the lower half.
-        // FIXME stephen
-        // builder
-        //     .when(local.selectors.is_lh + local.selectors.is_lhu)
-        //     .assert_zero(memory_columns.offset_is_one + memory_columns.offset_is_three);
+        builder
+            .when(local.selectors.is_lh + local.selectors.is_lhu)
+            .assert_zero(memory_columns.offset_is_one + memory_columns.offset_is_three);
 
         // When the instruction is LW, ensure that the offset is zero.
         builder.when(local.selectors.is_lw).assert_one(offset_is_zero.clone());
 
-        let use_lower_half = offset_is_zero;
-        let use_upper_half = memory_columns.offset_is_two;
+        //   addr_offset = addr % 4
+        //   offset = 1 - (addr_offset >> 1)
+        //   value = match offset % 2 {
+        //      0 => mem_value & 0x0000FFFF,
+        //      1 => (mem_value & 0xFFFF0000) >> 16,
+        //   }
+        //    le  be
+        // 0   0   1
+        // 1   0   1
+        // 2   1   0
+        // 3   1   0
+        // value=0x12_34_56_78,  addr=0x27654320, addr_offset=0, offset=1, value=0x12_34,
+        let use_lower_half = memory_columns.offset_is_two;
+        let use_upper_half = offset_is_zero;
         let half_value = Word([
-            use_lower_half.clone() * mem_val[0] + use_upper_half * mem_val[2],
+            use_lower_half.clone() * mem_val[0] + use_upper_half.clone() * mem_val[2],
             use_lower_half * mem_val[1] + use_upper_half * mem_val[3],
             AB::Expr::ZERO,
             AB::Expr::ZERO,
         ]);
-        // FIXME: stephen
-        // builder
-        //     .when(local.selectors.is_lh + local.selectors.is_lhu)
-        //     .assert_word_eq(half_value, local.unsigned_mem_val.map(|x| x.into()));
+        builder
+            .when(local.selectors.is_lh + local.selectors.is_lhu)
+            .assert_word_eq(half_value, local.unsigned_mem_val.map(|x| x.into()));
 
         // When the instruction is LW, just use the word.
         builder.when(local.selectors.is_lw).assert_word_eq(mem_val, local.unsigned_mem_val);
@@ -356,8 +361,8 @@ impl CpuChip {
             recomposed_byte = recomposed_byte.clone()
                 + memory_columns.most_sig_byte_decomp[i] * AB::Expr::from_canonical_u8(1 << i);
         }
-        //builder.when(local.selectors.is_lb).assert_eq(recomposed_byte.clone(), unsigned_mem_val[0]);
-        //builder.when(local.selectors.is_lh).assert_eq(recomposed_byte, unsigned_mem_val[1]);
+        builder.when(local.selectors.is_lb).assert_eq(recomposed_byte.clone(), unsigned_mem_val[0]);
+        builder.when(local.selectors.is_lh).assert_eq(recomposed_byte, unsigned_mem_val[1]);
     }
 
     /// Evaluates the offset value flags.
