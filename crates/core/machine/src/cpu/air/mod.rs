@@ -77,9 +77,6 @@ where
         // Jump instructions.
         self.eval_jump_ops::<AB>(builder, local, next);
 
-        // AUIPC instruction.
-        //self.eval_auipc(builder, local);
-
         // syscall instruction.
         self.eval_syscall(builder, local);
 
@@ -144,7 +141,7 @@ impl CpuChip {
 
         let is_jump_instruction = local.selectors.is_jump + local.selectors.is_jumpd;
 
-        // Verify that the local.pc + 4 is saved in op_a for both jump instructions.
+        // Verify that the local.pc + 8 is saved in op_a for both jump instructions.
         // When op_a is set to register X0, the RISC-V spec states that the jump instruction will
         // not have a return destination address (it is effectively a GOTO command).  In this case,
         // we shouldn't verify the return address.
@@ -154,14 +151,14 @@ impl CpuChip {
             .assert_eq(local.op_a_val().reduce::<AB>(), local.pc + AB::F::from_canonical_u8(8));
 
         // Verify that the word form of local.pc is correct for JAL instructions.
-        builder.when(local.selectors.is_jumpd).assert_eq(jump_columns.next_pc.reduce::<AB>(), local.next_pc);
+        builder.when(is_jump_instruction.clone()).assert_eq(jump_columns.next_pc.reduce::<AB>(), local.next_pc);
 
-        // Verify that the word form of next.pc is correct for both jump instructions.
+        // Verify that the word form of target.pc is correct for both jump instructions.
         builder
             .when_transition()
-            .when(next.is_real)
+            .when(local.is_real)
             .when(is_jump_instruction.clone())
-            .assert_eq(jump_columns.next_pc.reduce::<AB>(), next.pc);
+            .assert_eq(jump_columns.target_pc.reduce::<AB>(), local.next_next_pc);
 
         // When the last row is real and it's a jump instruction, assert that local.next_pc <==>
         // jump_column.next_pc
@@ -181,7 +178,7 @@ impl CpuChip {
             builder,
             jump_columns.next_pc,
             jump_columns.next_pc_range_checker,
-            local.selectors.is_jumpd.into(),
+            is_jump_instruction.clone(),
         );
         BabyBearWordRangeChecker::<AB::F>::range_check(
             builder,
@@ -305,16 +302,21 @@ impl CpuChip {
         // instructions. The other case is handled by eval_jump, eval_branch and eval_syscall
         // (for halt).
         builder
-            .when_transition()
-            .when(next.is_real)
+            .when(local.is_real)
             .when(local.is_sequential_instr)
-            .assert_eq(local.next_pc + AB::Expr::from_canonical_u8(4), next.next_pc);
+            .assert_eq(local.next_pc + AB::Expr::from_canonical_u8(4), local.next_next_pc);
 
         // When the last row is real and it's a sequential instruction, assert that local.next_pc
-        // <==> next.pc
+        // <==> next.pc, local.next_next_pc <==> next.next_pc
         builder
+            .when_transition()
             .when(next.is_real)
             .assert_eq(local.next_pc, next.pc);
+
+        builder
+            .when_transition()
+            .when(next.is_real)
+            .assert_eq(local.next_next_pc, next.next_pc);
     }
 
     /// Constraints related to the public values.

@@ -138,6 +138,7 @@ impl CpuChip {
         // Populate basic fields.
         cols.pc = F::from_canonical_u32(event.pc);
         cols.next_pc = F::from_canonical_u32(event.next_pc);
+        cols.next_next_pc = F::from_canonical_u32(event.next_next_pc);
         cols.instruction.populate(instruction);
         cols.selectors.populate(instruction);
         if let Some(hi) = event.s1 {
@@ -198,10 +199,10 @@ impl CpuChip {
         self.populate_branch(cols, event, nonce_lookup, instruction);
         self.populate_jump(cols, event, nonce_lookup, instruction);
         //self.populate_auipc(cols, event, nonce_lookup, instruction);
-        let is_halt = self.populate_syscall(cols, event, nonce_lookup);
+        let _is_halt = self.populate_syscall(cols, event, nonce_lookup);
 
         cols.is_sequential_instr = F::from_bool(
-            !instruction.is_branch_instruction() && !instruction.is_jump_instruction() && !is_halt,
+            !instruction.is_branch_instruction() && !instruction.is_jump_instruction(),
         );
 
         // Assert that the instruction is not a no-op.
@@ -479,6 +480,8 @@ impl CpuChip {
                      let target_pc = event.b;
                      jump_columns.op_a_range_checker.populate(event.a);
                      jump_columns.target_pc = Word::from(target_pc);
+                     jump_columns.next_pc = Word::from(event.next_pc);
+                     jump_columns.next_pc_range_checker.populate(event.next_pc);
                      jump_columns.target_pc_range_checker.populate(target_pc);
                      jump_columns.jump_nonce = F::from_canonical_u32(
                          nonce_lookup
