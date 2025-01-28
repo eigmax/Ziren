@@ -30,15 +30,9 @@ pub struct Program {
     pub next_pc: u32,
     /// The initial memory image
     pub image: BTreeMap<u32, u32>,
-    pub gprs: [usize; 32],
-    pub lo: usize,
-    pub hi: usize,
     /// The shape for the preprocessed tables.
     // todo: check if necessary
     pub preprocessed_shape: Option<CoreShape>,
-
-    /// The initial memory image, useful for global constants.
-    pub memory_image: hashbrown::HashMap<u32, u32>,
 }
 
 impl Program {
@@ -147,19 +141,6 @@ impl Program {
             }
         }
 
-        let mut gprs = [0; 32];
-        gprs[29] = INIT_SP as usize;
-
-        let lo = 0;
-        let hi = 0;
-
-        // initialize gprs
-        gprs.iter().enumerate().for_each(|(i, &x)| {
-            image.insert(i as u32, x as u32);
-        });
-        image.insert(32, lo as u32);
-        image.insert(33, hi as u32);
-
         // decode each instruction
         let instructions: Vec<_> = instructions
             .par_iter()
@@ -172,11 +153,7 @@ impl Program {
             pc_base: base_address,
             next_pc: entry + 4,
             image,
-            gprs,
-            lo,
-            hi,
             preprocessed_shape: None,
-            memory_image: hashbrown::HashMap::new(),
         })
     }
 
