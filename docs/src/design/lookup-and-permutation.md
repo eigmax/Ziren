@@ -48,3 +48,8 @@ Logup efficiently proves that a set of witness values exists in a Boolean hyperc
 Using the LogUp construction instead of a simple multiset check with running products reduces the computational effort for the prover and the verifier. .
 
 \\[ \sum_{i=0}^l \frac{1}{\alpha - f_i} = \sum_{i=0}^n \frac{m_i}{\alpha - t_i} \\]
+
+# Lookup in ZKM2
+
+![zkm2 chips lookup scheme](zkm2-chips-lookup.png)
+source: [zkm2-chips.drawio](https://drive.google.com/file/d/1loR3llVMTm9gw97kgsu72NEGARau1ReX/view?usp=sharing)
