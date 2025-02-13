@@ -4,7 +4,7 @@ extern crate alloc;
 // use crate::poseidon_sponge::poseidon_sponge_stark::poseidon;
 use alloc::collections::BTreeMap;
 use anyhow::{anyhow, bail, Context, Result};
-use elf::{endian::BigEndian, file::Class, ElfBytes};
+use elf::{endian::LittleEndian, file::Class, ElfBytes};
 use std::io::Read;
 use num::PrimInt;
 
@@ -52,7 +52,7 @@ impl Program {
         let max_mem = 0x80000000; // todo: confirm it
 
         let mut image: BTreeMap<u32, u32> = BTreeMap::new();
-        let elf = ElfBytes::<BigEndian>::minimal_parse(elf_code)
+        let elf = ElfBytes::<LittleEndian>::minimal_parse(elf_code)
             .map_err(|err| anyhow!("Elf parse error: {err}"))?;
         if elf.ehdr.class != Class::ELF32 {
             bail!("Not a 32-bit ELF");
@@ -131,8 +131,7 @@ impl Program {
                     for j in 0..len {
                         let offset = (offset + i + j) as usize;
                         let byte = elf_code.get(offset).context("Invalid segment offset")?;
-                        // todo: check it BIG_ENDIAN
-                        word |= (*byte as u32) << (24 - j * 8);
+                        word |= (*byte as u32) << (j * 8);
                     }
                     image.insert(addr, word);
                     // todo: check it

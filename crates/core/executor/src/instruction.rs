@@ -205,7 +205,7 @@ impl Instruction {
             // } // SRL: rd = rt >> sa
             (0b000000, 0b000010) => {
                 if rs == 1 {
-                    Ok(Self::new_with_raw(Opcode::UNIMPL, 0, 0, 0, true, true, insn))
+                    Ok(Self::new_with_raw(Opcode::UNIMPL, 0, 0, insn, true, true, insn))
                 } else {
                     Ok(Self::new(Opcode::SRL, rd, rt, sa, false, true)) // SRL: rd = rt >> sa
                 }
@@ -245,25 +245,25 @@ impl Instruction {
             //     rt,
             //     rd,
             // )), // MULT: (hi, lo) = rt * rs
-            (0b000000, 0b011000) => Ok(Self::new(Opcode::MULT, rd, rt, rs, false, false)), // MULT: (hi, lo) = rt * rs
+            (0b000000, 0b011000) => Ok(Self::new(Opcode::MULT, 32, rt, rs, false, false)), // MULT: (hi, lo) = rt * rs
             // (0b000000, 0b011001) => Ok(Operation::BinaryArithmetic(
             //     BinaryOperator::MULTU,
             //     rs,
             //     rt,
             //     rd,
             // )), // MULTU: (hi, lo) = rt * rs
-            (0b000000, 0b011001) => Ok(Self::new(Opcode::MULTU, rd, rt, rs, false, false)), // MULTU: (hi, lo) = rt * rs
+            (0b000000, 0b011001) => Ok(Self::new(Opcode::MULTU, 32, rt, rs, false, false)), // MULTU: (hi, lo) = rt * rs
             // (0b000000, 0b011010) => {
             //     Ok(Operation::BinaryArithmetic(BinaryOperator::DIV, rs, rt, rd))
             // } // DIV: (hi, lo) = rt / rs
-            (0b000000, 0b011010) => Ok(Self::new(Opcode::DIV, rd, rs, rt, false, false)), // DIV: (hi, lo) = rs / rt
+            (0b000000, 0b011010) => Ok(Self::new(Opcode::DIV, 32, rs, rt, false, false)), // DIV: (hi, lo) = rs / rt
             // (0b000000, 0b011011) => Ok(Operation::BinaryArithmetic(
             //     BinaryOperator::DIVU,
             //     rs,
             //     rt,
             //     rd,
             // )), // DIVU: (hi, lo) = rt / rs
-            (0b000000, 0b011011) => Ok(Self::new(Opcode::DIVU, rd, rs, rt, false, false)), // DIVU: (hi, lo) = rs / rt
+            (0b000000, 0b011011) => Ok(Self::new(Opcode::DIVU, 32, rs, rt, false, false)), // DIVU: (hi, lo) = rs / rt
             // (0b000000, 0b010000) => {
             //     Ok(Operation::BinaryArithmetic(BinaryOperator::MFHI, 33, 0, rd))
             // } // MFHI: rd = hi
@@ -315,9 +315,7 @@ impl Instruction {
                     // Ok(Operation::JumpDirect(31, offset)) // BAL
                     Ok(Self::new(Opcode::JumpDirect, 31, offset_ext16.overflowing_shl(2).0, 0, true, true))
                 } else {
-                    // todo: change to ProgramError later
-                    // panic!("InvalidOpcode")
-                    Ok(Self::new_with_raw(Opcode::UNIMPL, 0, 0, 0, true, true, insn))
+                    Ok(Self::new_with_raw(Opcode::UNIMPL, 0, 0, insn, true, true, insn))
                 }
             }
             // (0x02, _) => Ok(Operation::Jumpi(0u8, target)), // J
@@ -505,12 +503,10 @@ impl Instruction {
             // (0b110011, _) => Ok(Operation::Nop),            // Pref
             (0b110011, _) => Ok(Self::new(Opcode::NOP, 0, 0, 0, true, true)), // Pref
             // (0b000000, 0b110100) => Ok(Operation::Teq(rs, rt)), // teq
-            (0b000000, 0b110100) => Ok(Self::new(Opcode::TEQ, rd, rs, rt, false, false)), // teq
+            (0b000000, 0b110100) => Ok(Self::new(Opcode::TEQ, rs as u8, rt, 0, false, true)), // teq
             _ => {
                 log::warn!("decode: invalid opcode {:#08b} {:#08b}", opcode, func);
-                // todo: change to ProgramError later
-                // panic!("InvalidOpcode")
-                Ok(Self::new_with_raw(Opcode::UNIMPL, 0, 0, 0, true, true, insn))
+                Ok(Self::new_with_raw(Opcode::UNIMPL, 0, 0, insn, true, true, insn))
             }
         }
     }

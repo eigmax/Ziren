@@ -621,7 +621,7 @@ mod tests {
 //
         let mut rng = thread_rng();
 //
-        let num_tests = 1;
+        let num_tests = 10;
 //
         for _ in 0..num_tests {
             let secret_key = p256::SecretKey::random(&mut rng);

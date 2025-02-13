@@ -155,6 +155,10 @@ pub enum ExecutionError {
     #[error("unimplemented syscall {0}")]
     UnsupportedSyscall(u32),
 
+    /// The execution failed with an unimplemented instruction.
+    #[error("unimplemented instruction {0}")]
+    UnsupportedInstruction(u32),
+
     /// The execution failed with a breakpoint.
     #[error("breakpoint encountered")]
     Breakpoint(),
@@ -378,7 +382,7 @@ impl<'a> Executor<'a> {
     #[must_use]
     pub fn byte(&mut self, addr: u32) -> u8 {
         let word = self.word(addr - addr % 4);
-        (word >> (24 - (addr % 4) * 8)) as u8
+        (word >> ((addr % 4) * 8)) as u8
     }
 
     /// Get the current timestamp for a given memory access position.
@@ -938,7 +942,7 @@ impl<'a> Executor<'a> {
                     self.report.event_counts[Opcode::SLT] += 2;
                 }
                 Opcode::DIVU | Opcode::DIV => {
-                    self.report.event_counts[Opcode::MUL] += 1;
+                    self.report.event_counts[Opcode::MUL] += 2;
                     self.report.event_counts[Opcode::ADD] += 2;
                     self.report.event_counts[Opcode::SLTU] += 1;
                 }
@@ -959,6 +963,18 @@ impl<'a> Executor<'a> {
 
                 if self.print_report && !self.unconstrained {
                     self.report.syscall_counts[syscall] += 1;
+                }
+
+                // `hint_slice` is allowed in unconstrained mode since it is used to write the hint.
+                // Other syscalls are not allowed because they can lead to non-deterministic
+                // behavior, especially since many syscalls modify memory in place,
+                // which is not permitted in unconstrained mode. This will result in
+                // non-zero memory interactions when generating a proof.
+
+                if self.unconstrained
+                    && (syscall != SyscallCode::EXIT_UNCONSTRAINED && syscall != SyscallCode::WRITE)
+                {
+                    return Err(ExecutionError::InvalidSyscallUsage(syscall_id as u64));
                 }
 
                 // Update the syscall counts.
@@ -1096,13 +1112,15 @@ impl<'a> Executor<'a> {
             }
 
             // Opcode::GetContext | Opcode::SetContext => {}
-            Opcode::NOP => {}
+            Opcode::NOP => {
+                self.rw(Register::ZERO, 0, MemoryAccessPosition::A);
+            }
 
             Opcode::TEQ => {
                 (a, b, c) = self.execute_teq(instruction);
             }
             Opcode::UNIMPL => {
-                log::warn!("Unimplemented code")
+                return Err(ExecutionError::UnsupportedInstruction(instruction.op_c));
             }
         }
 
@@ -1137,17 +1155,17 @@ impl<'a> Executor<'a> {
 
     fn execute_teq(&mut self, instruction: &Instruction) -> (u32, u32, u32) {
         let (rs, rt) = (
+            (instruction.op_a as u8).into(),
             (instruction.op_b as u8).into(),
-            (instruction.op_c as u8).into(),
         );
 
-        let b = self.rr(rs, MemoryAccessPosition::B);
-        let c = self.rr(rt, MemoryAccessPosition::C);
+        let src1 = self.rr(rs, MemoryAccessPosition::A);
+        let src2 = self.rr(rt, MemoryAccessPosition::B);
 
-        if b == c {
+        if src1 == src2 {
             panic!("Trap Error");
         }
-        (0, b, c)
+        (src1, src2, 0)
     }
 
     fn execute_condmov(&mut self, instruction: &Instruction) -> (u32, u32, u32) {
@@ -1255,37 +1273,37 @@ impl<'a> Executor<'a> {
 
         let val = match instruction.opcode {
             Opcode::LH => {
-                let mem_fc = |i: u32| -> u32 { sign_extend::<16>((mem >> (16 - i * 8)) & 0xffff) };
+                let mem_fc = |i: u32| -> u32 { sign_extend::<16>((mem >> (i * 8)) & 0xffff) };
                 mem_fc(rs & 2)
             }
             Opcode::LWL => {
                 let out = |i: u32| -> u32 {
-                    let val = mem << (i * 8);
-                    let mask: u32 = 0xffFFffFFu32 << (i * 8);
+                    let val = mem << (24 - i * 8);
+                    let mask: u32 = 0xffFFffFFu32 << (24 - i * 8);
                     (rt & (!mask)) | val
                 };
                 out(rs & 3)
             }
             Opcode::LW => mem,
             Opcode::LBU => {
-                let out = |i: u32| -> u32 { (mem >> (24 - i * 8)) & 0xff };
+                let out = |i: u32| -> u32 { (mem >> (i * 8)) & 0xff };
                 out(rs & 3)
             }
             Opcode::LHU => {
-                let mem_fc = |i: u32| -> u32 { (mem >> (16 - i * 8)) & 0xffff };
+                let mem_fc = |i: u32| -> u32 { (mem >> (i * 8)) & 0xffff };
                 mem_fc(rs & 2)
             }
             Opcode::LWR => {
                 let out = |i: u32| -> u32 {
-                    let val = mem >> (24 - i * 8);
-                    let mask = 0xffFFffFFu32 >> (24 - i * 8);
+                    let val = mem >> (i * 8);
+                    let mask = 0xffFFffFFu32 >> (i * 8);
                     (rt & (!mask)) | val
                 };
                 out(rs & 3)
             }
             Opcode::LL => mem,
             Opcode::LB => {
-                let out = |i: u32| -> u32 { sign_extend::<8>((mem >> (24 - i * 8)) & 0xff) };
+                let out = |i: u32| -> u32 { sign_extend::<8>((mem >> (i * 8)) & 0xff) };
                 out(rs & 3)
             }
             _ => unreachable!(),
@@ -1320,24 +1338,24 @@ impl<'a> Executor<'a> {
         let val = match instruction.opcode {
             Opcode::SB => {
                 let out = |i: u32| -> u32 {
-                    let val = (rt & 0xff) << (24 - i * 8);
-                    let mask = 0xffFFffFFu32 ^ (0xff << (24 - i * 8));
+                    let val = (rt & 0xff) << (i * 8);
+                    let mask = 0xffFFffFFu32 ^ (0xff << (i * 8));
                     (mem & mask) | val
                 };
                 out(virt_raw & 3)
             }
             Opcode::SH => {
                 let mem_fc = |i: u32| -> u32 {
-                    let val = (rt & 0xffff) << (16 - i * 8);
-                    let mask = 0xffFFffFFu32 ^ (0xffff << (16 - i * 8));
+                    let val = (rt & 0xffff) << (i * 8);
+                    let mask = 0xffFFffFFu32 ^ (0xffff << (i * 8));
                     (mem & mask) | val
                 };
                 mem_fc(virt_raw & 2)
             }
             Opcode::SWL => {
                 let out = |i: u32| -> u32 {
-                    let val = rt >> (i * 8);
-                    let mask = 0xffFFffFFu32 >> (i * 8);
+                    let val = rt >> (24 - i * 8);
+                    let mask = 0xffFFffFFu32 >> (24 - i * 8);
                     (mem & (!mask)) | val
                 };
                 out(virt_raw & 3)
@@ -1345,8 +1363,8 @@ impl<'a> Executor<'a> {
             Opcode::SW => rt,
             Opcode::SWR => {
                 let out = |i: u32| -> u32 {
-                    let val = rt << (24 - (virt_raw & i) * 8);
-                    let mask = 0xffFFffFFu32 << (24 - i * 8);
+                    let val = rt << (i * 8);
+                    let mask = 0xffFFffFFu32 << (i * 8);
                     (mem & (!mask)) | val
                 };
                 out(virt_raw & 3)
@@ -1363,7 +1381,7 @@ impl<'a> Executor<'a> {
         if instruction.opcode == Opcode::SC {
             self.rw(rt_reg, 1, MemoryAccessPosition::A);
 
-            Ok((val, rs, offset_ext))
+            Ok((1, rs, offset_ext))
         } else {
             Ok((rt, rs, offset_ext))
         }
@@ -1403,6 +1421,7 @@ impl<'a> Executor<'a> {
 
         (next_pc, target_pc, 0, target_pc)
     }
+
     fn execute_jumpi(&mut self, instruction: &Instruction) -> (u32, u32, u32, u32) {
         let (link, target_pc) = (instruction.op_a.into(), instruction.op_b);
 
@@ -1415,6 +1434,7 @@ impl<'a> Executor<'a> {
 
         (next_pc, target_pc, 0, target_pc)
     }
+
     fn execute_jump_direct(&mut self, instruction: &Instruction) -> (u32, u32, u32, u32) {
         let (link, target_pc) = (instruction.op_a.into(), instruction.op_b);
         //todo: check if necessary
