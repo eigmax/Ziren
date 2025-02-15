@@ -310,7 +310,7 @@ impl CpuChip {
         let mem_value = event.memory_record.unwrap().value();
         if matches!(
             instruction.opcode,
-            Opcode::LB | Opcode::LBU | Opcode::LH | Opcode::LHU | Opcode::LW | Opcode::LWL | Opcode::LWR
+            Opcode::LB | Opcode::LBU | Opcode::LH | Opcode::LHU | Opcode::LW | Opcode::LWL | Opcode::LWR | Opcode::LL
         ) {
             match instruction.opcode {
                 Opcode::LB | Opcode::LBU => {
@@ -333,20 +333,20 @@ impl CpuChip {
                 }
                 Opcode::LWL => {
                     // LWL:
-                    //    let val = mem << ((rs & 3) * 8);
-                    //    let mask = 0xffFFffFFu32 << ((rs & 3) * 8);
+                    //    let val = mem << (24 - (rs & 3) * 8);
+                    //    let mask = 0xffFFffFFu32 << (24 - (rs & 3) * 8);
                     //    (rt & (!mask)) | val
-                    let val = mem_value << (addr_offset * 8);
-                    let mask = 0xffFFffFFu32 << (addr_offset * 8);
+                    let val = mem_value << (24 - addr_offset * 8);
+                    let mask = 0xffFFffFFu32 << (24 - addr_offset * 8);
                     cols.unsigned_mem_val = ((mem_value & (!mask)) | val).into();
                 }
                 Opcode::LWR => {
                     // LWR:
-                    //     let val = mem >> (24 - (rs & 3) * 8);
-                    //     let mask = 0xffFFffFFu32 >> (24 - (rs & 3) * 8);
+                    //     let val = mem >> ((rs & 3) * 8);
+                    //     let mask = 0xffFFffFFu32 >> ((rs & 3) * 8);
                     //     (rt & (!mask)) | val
-                    let val = mem_value >> (24 - addr_offset * 8);
-                    let mask = 0xffFFffFFu32 >> (24 - addr_offset * 8);
+                    let val = mem_value >> (addr_offset * 8);
+                    let mask = 0xffFFffFFu32 >> (addr_offset * 8);
                     cols.unsigned_mem_val = ((mem_value & (!mask)) | val).into();
                 }
                 Opcode::LL => {

@@ -655,7 +655,7 @@ impl<'a> Executor<'a> {
             MemoryAccessPosition::S1,
             MemoryAccessPosition::S2
         ]
-        .contains(&position));
+            .contains(&position));
         // Register 0 should always be 0
         if register == Register::ZERO {
             self.mw_cpu(register as u32, 0, position);
@@ -1563,9 +1563,9 @@ impl<'a> Executor<'a> {
                             lt_distance,
                             cloclz_distance,
                         ]
-                        .into_iter()
-                        .min()
-                        .unwrap();
+                            .into_iter()
+                            .min()
+                            .unwrap();
 
                         if l_infinity >= 32 {
                             shape_match_found = true;
@@ -1618,7 +1618,7 @@ impl<'a> Executor<'a> {
         let done = self.state.pc == 0
             || self.state.exited
             || self.state.pc.wrapping_sub(self.program.pc_base)
-                >= (self.program.instructions.len() * 4) as u32;
+            >= (self.program.instructions.len() * 4) as u32;
         if done && self.unconstrained {
             log::error!(
                 "program ended in unconstrained mode at clk {}",
@@ -1892,7 +1892,7 @@ impl<'a> Executor<'a> {
 
         if self.emit_global_memory_events
             && (self.executor_mode == ExecutorMode::Trace
-                || self.executor_mode == ExecutorMode::Checkpoint)
+            || self.executor_mode == ExecutorMode::Checkpoint)
         {
             // SECTION: Set up all MemoryInitializeFinalizeEvents needed for memory argument.
             let memory_finalize_events = &mut self.record.global_memory_finalize_events;
@@ -2001,10 +2001,7 @@ fn log2_ceil_usize(n: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use crate::programs::tests::{
-        fibonacci_program, panic_program, secp256r1_add_program, secp256r1_double_program,
-        simple_memory_program, simple_program, ssz_withdrawals_program, u256xu2048_mul_program,
-    };
+    use crate::programs::tests::{fibonacci_program, panic_program, secp256r1_add_program, secp256r1_double_program, simple_memory_program, simple_program, ssz_withdrawals_program, u256xu2048_mul_program};
     use zkm2_stark::ZKMCoreOpts;
 
     use crate::{Instruction, Opcode, Register};
