@@ -33,4 +33,5 @@
     - [Continuation](./design/continuation.md)
 - [Background Material](./background.md)
     - [Circle STARK](./Circle-STARK.md)
+    - [Offline Memory Consistency Checking](./offline_memory_consistency_checking.md)
 - [Chapter template](./chapter_template.md)
