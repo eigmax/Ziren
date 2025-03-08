@@ -1,33 +1,52 @@
-# Overview
+zkMIPS verifies the correctness of the execution of an MIPS program by generating a zero-knowledge proof that reflects the CPU states throughout the program’s runtime. In essence, the “computation problem” in zkMIPS is the given program, and its “solution” is the **execution trace** produced when running that program. This trace details every step of the program execution, with each row corresponding to a single step (or a cycle) and each column representing a fixed CPU variable or register state. Verifying a program essentially involves checking that every step in the trace aligns with the corresponding instruction and the expected logic of the MIPS program. 
+
+Below is the workflow of zkMIPS.
+
 ![image](./zkmips_overview.png)
 
-zkMIPS verifies the correctness of the execution of a MIPS program in the form of a proof. This is equivalent to the sequence of overall CPU states that represent a program’s execution.
+## High-Level Workflow of zkMIPS
 
-In zkMIPS, the computational problem that we want to verify is the program. The solution comes in the form of an execution trace.
+Referring to the above diagram, zkMIPS follows a structured pipeline composed of the following stages:
 
-An execution trace is a complete record of the computation executed from running the program. The execution trace is commonly represented through a trace record, where each column is a list representing the states of a fixed CPU variable and the rows showing each step of the computation.
+1. **Program**  
+   A developer writes code in a high-level language such as in Go or in Rust, creating the application logic that needs to be verified.
 
-The program is verified by checking whether each row of the execution trace matches the respective instruction of a program.
+2. **MIPS Compiler**  
+   The high-level program is compiled into an MIPS ELF binary using a dedicated compiler. This step converts the source code into MIPS32-compliant instructions to produce an executable ELF file.
 
-## Components
+3. **ELF Loader**  
+   The ELF Loader reads and interprets the ELF file and prepares for execution within the MIPS VM. This includes loading code segments, initializing memory, and setting up the program’s entry point.
 
-### MIPS Compiler
-A program written in Go or Rust is compiled into a MIPS ELF binary file using the MIPS Compiler. The ELF file is the executable format for the MIPS instruction set.
+4. **MIPS VM**  
+   The MIPS Virtual Machine simulates an MIPS CPU to run the loaded ELF file. It captures every step of execution—such as register states, memory accesses, and instruction addresses—and generates the **execution trace** (i.e., a detailed record of the entire computation).
 
-### ELF Loader
-The MIPS ELF binary file is loaded into the MIPS VM using the ELF Loader.
+5. **Execution Trace**  
+   This trace is the core data structure used to verify the program. Each row represents a single step of execution, and each column corresponds to a particular CPU register or state variable. By ensuring that every step in the trace matches the intended behavior of the MIPS instructions, zkMIPS can prove the program was executed correctly.
 
-### MIPS VM
-The MIPS VM runs the program and generates an execution trace for the Prover.
+6. **Prover**  
+   The Prover takes the execution trace from the MIPS VM and generates a zero-knowledge proof. This proof shows that the program followed the correct sequence of states without revealing any sensitive internal data.  In addition, the proof is eventually used by a **Verifier Contract** or another verification component, often deployed on-chain, to confirm that the MIPS program executed as claimed.
 
-### Prover
-The Prover executes the MIPS program and uses the execution trace to generate a proof.
 
-As part of the Prover, the following are steps in the proof generation process:
+## Prover Internal Proof Generation Steps
 
-1. The program and trace are divided into segments.
-2. The segments are divided into modules. The instructions of each segment are divided into groups of four module tables: arithmetic, logic, memory and control.
-3. STARK – The modules are proven independently and in parallel with FRI. These proofs are FRI-based modular proofs.
-4. LogUp (STARK) – The modular proofs from the previous step are combined into one single proof for each segment using the LogUp lookup protocol. These segment proofs are LogUp proofs written using Starky.
-5. PLONK – All segment proofs from the previous layer are recursively combined using the continuation protocol into one single continuation proof. This proves the correctness of the entire program trace. The continuation proofs are written using Plonky.
-6. Groth16 – The Groth16 proving system is used to enable on-chain computation by converting the proof to an EVM-friendly format. The continuation proof is converted into an on-chain Groth16 (SNARK-based) proof.
+Within the Prover, zkMIPS employs multiple stages to efficiently process and prove the execution trace, ultimately producing a format suitable for on-chain verification:
+
+1. **Segmentation**  
+   The entire program trace is split into multiple segments. This segmentation reduces the data size per step and facilitates parallel and modular proof generation.
+
+2. **Module Division**  
+   Each segment is further broken down into modules—typically grouped into four tables: arithmetic, logic, memory, and control. By organizing instructions into specialized modules, the Prover can handle them more efficiently.
+
+3. **STARK**  
+   Each module undergoes an independent STARK proof using FRI (Fast Reed-Solomon Interactive Oracle Proofs of Proximity). These FRI-based proofs verify that the arithmetic, logic, memory, and control operations within each module conform to the correct rules.
+
+4. **LogUp (STARK)**  
+   Once all modules within a segment are proven, they are combined into a single proof per segment via the LogUp protocol (implemented with Starky). This step merges multiple STARK proofs into a cohesive segment-level proof.
+
+5. **PLONK**  
+   The segment proofs are then recursively aggregated into a **continuation proof** covering the entire program execution trace. This is done using PLONK-based techniques (such as Plonky) to ensure that the proofs for all segments link together to validate the full computation.
+
+6. **Groth16**  
+   Finally, to facilitate on-chain verification (for example, on the Ethereum Virtual Machine), the proof is transformed into a Groth16 proof. Groth16 is a SNARK system widely used for its efficient on-chain verification costs.
+   
+In conclusion, throughout this process, zkMIPS seamlessly transforms a high-level program into MIPS instructions, runs those instructions to produce an execution trace, and then applies STARK, LogUp, PLONK, and Groth16 techniques to generate a succinct zero-knowledge proof. This proof can be verified on-chain to ensure both the correctness and the privacy of the computation. 
