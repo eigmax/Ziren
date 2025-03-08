@@ -57,7 +57,8 @@ pub fn main() {
     assert_eq!(output.to_vec(), public_input);
 
     // Commit the output hash to the runtime.
-    // This typically means that the computed proof (in this case, the hash) is recorded for further verification or on-chain storage.
+    // This typically means that the computed proof (in this case, the hash) is recorded for further verification
+    // or on-chain storage.
     zkm_runtime::io::commit::<[u8; 32]>(&output);
 }
 }
