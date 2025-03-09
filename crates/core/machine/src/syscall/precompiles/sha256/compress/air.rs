@@ -5,7 +5,7 @@ use p3_field::FieldAlgebra;
 use p3_matrix::Matrix;
 use zkm2_core_executor::syscalls::SyscallCode;
 use zkm2_stark::{
-    air::{InteractionScope, ZKMAirBuilder},
+    air::{LookupScope, ZKMAirBuilder},
     Word,
 };
 
@@ -39,10 +39,6 @@ where
         let local: &ShaCompressCols<AB::Var> = (*local).borrow();
         let next: &ShaCompressCols<AB::Var> = (*next).borrow();
 
-        // Constrain the incrementing nonce.
-        builder.when_first_row().assert_zero(local.nonce);
-        builder.when_transition().assert_eq(local.nonce + AB::Expr::ONE, next.nonce);
-
         self.eval_control_flow_flags(builder, local, next);
 
         self.eval_memory(builder, local);
@@ -55,12 +51,11 @@ where
         builder.receive_syscall(
             local.shard,
             local.clk,
-            local.nonce,
             AB::F::from_canonical_u32(SyscallCode::SHA_COMPRESS.syscall_id()),
             local.w_ptr,
             local.h_ptr,
             local.start,
-            InteractionScope::Local,
+            LookupScope::Local,
         );
     }
 }

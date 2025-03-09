@@ -1,6 +1,6 @@
 use amcl::bls381::{big::Big, bls381::utils::deserialize_g1, fp::FP};
 use generic_array::GenericArray;
-use num::{BigUint, Num, Zero};
+use num::{BigUint, Num};
 use serde::{Deserialize, Serialize};
 use typenum::{U48, U94};
 
@@ -103,7 +103,7 @@ impl WeierstrassParameters for Bls12381Parameters {
     }
 
     fn a_int() -> BigUint {
-        BigUint::zero()
+        BigUint::ZERO
     }
 
     fn b_int() -> BigUint {

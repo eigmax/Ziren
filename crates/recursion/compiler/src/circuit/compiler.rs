@@ -1,6 +1,8 @@
 use chips::poseidon2_skinny::WIDTH;
 use core::fmt::Debug;
-use instruction::{FieldEltType, HintBitsInstr, HintExt2FeltsInstr, HintInstr, PrintInstr};
+use instruction::{
+    FieldEltType, HintAddCurveInstr, HintBitsInstr, HintExt2FeltsInstr, HintInstr, PrintInstr,
+};
 use itertools::Itertools;
 use p3_field::{
     Field, FieldAlgebra, FieldExtensionAlgebra, PrimeField, PrimeField64, TwoAdicField,
@@ -12,6 +14,7 @@ use zkm2_recursion_core::{
     air::{Block, RecursionPublicValues, RECURSIVE_PROOF_NUM_PV_ELTS},
     BaseAluInstr, BaseAluOpcode,
 };
+use zkm2_stark::septic_curve::SepticCurve;
 
 use zkm2_recursion_core::*;
 
@@ -245,6 +248,7 @@ where
         f(self.ext_alu(DivE, out, Imm::EF(C::EF::ONE), diff));
     }
 
+    #[inline(always)]
     fn poseidon2_permute(
         &mut self,
         dst: [impl Reg<C>; WIDTH],
@@ -259,6 +263,7 @@ where
         }))
     }
 
+    #[inline(always)]
     fn select(
         &mut self,
         bit: impl Reg<C>,
@@ -304,6 +309,32 @@ where
         Instruction::HintBits(HintBitsInstr {
             output_addrs_mults: output.into_iter().map(|r| (r.write(self), C::F::ZERO)).collect(),
             input_addr: value.read_ghost(self),
+        })
+    }
+
+    fn add_curve(
+        &mut self,
+        output: SepticCurve<Felt<C::F>>,
+        input1: SepticCurve<Felt<C::F>>,
+        input2: SepticCurve<Felt<C::F>>,
+    ) -> Instruction<C::F> {
+        Instruction::HintAddCurve(HintAddCurveInstr {
+            output_x_addrs_mults: output
+                .x
+                .0
+                .into_iter()
+                .map(|r| (r.write(self), C::F::ZERO))
+                .collect(),
+            output_y_addrs_mults: output
+                .y
+                .0
+                .into_iter()
+                .map(|r| (r.write(self), C::F::ZERO))
+                .collect(),
+            input1_x_addrs: input1.x.0.into_iter().map(|value| value.read_ghost(self)).collect(),
+            input1_y_addrs: input1.y.0.into_iter().map(|value| value.read_ghost(self)).collect(),
+            input2_x_addrs: input2.x.0.into_iter().map(|value| value.read_ghost(self)).collect(),
+            input2_y_addrs: input2.y.0.into_iter().map(|value| value.read_ghost(self)).collect(),
         })
     }
 
@@ -411,6 +442,7 @@ where
     ///
     /// We do not simply return a `Vec` for performance reasons --- results would be immediately fed
     /// to `flat_map`, so we employ fusion/deforestation to eliminate intermediate data structures.
+    #[inline]
     pub fn compile_one<F>(
         &mut self,
         ir_instr: DslIr<C>,
@@ -507,6 +539,9 @@ where
             DslIr::CircuitV2CommitPublicValues(public_values) => {
                 f(self.commit_public_values(&public_values))
             }
+            DslIr::CircuitV2HintAddCurve(output, point1, point2) => {
+                f(self.add_curve(output, point1, point2))
+            }
 
             DslIr::PrintV(dst) => f(self.print_f(dst)),
             DslIr::PrintF(dst) => f(self.print_f(dst)),
@@ -546,6 +581,7 @@ where
                             println!("instr: {:?}", instr);
                             span_builder.item(instr_name(&instr));
                             instrs.push(instr);
+                            #[cfg(feature = "debug")]
                             traces.push(trace.clone());
                         }
                         Err(CompileOneErr::CycleTrackerEnter(name)) => {
@@ -656,6 +692,18 @@ where
                             .iter_mut()
                             .for_each(|(addr, mult)| backfill((mult, addr)));
                     }
+                    Instruction::HintAddCurve(HintAddCurveInstr {
+                        output_x_addrs_mults,
+                        output_y_addrs_mults,
+                        ..
+                    }) => {
+                        output_x_addrs_mults
+                            .iter_mut()
+                            .for_each(|(addr, mult)| backfill((mult, addr)));
+                        output_y_addrs_mults
+                            .iter_mut()
+                            .for_each(|(addr, mult)| backfill((mult, addr)));
+                    }
                     // Instructions that do not write to memory.
                     Instruction::Mem(MemInstr { kind: MemAccessKind::Read, .. })
                     | Instruction::CommitPublicValues(_)
@@ -708,6 +756,7 @@ const fn instr_name<F>(instr: &Instruction<F>) -> &'static str {
         Instruction::Print(_) => "Print",
         Instruction::HintExt2Felts(_) => "HintExt2Felts",
         Instruction::Hint(_) => "Hint",
+        Instruction::HintAddCurve(_) => "HintAddCurve",
         Instruction::CommitPublicValues(_) => "CommitPublicValues",
     }
 }

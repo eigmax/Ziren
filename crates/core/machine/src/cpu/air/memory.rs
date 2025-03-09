@@ -52,6 +52,7 @@ impl CpuChip {
     }
 
     /// Computes whether the opcode is a store instruction.
+    #[allow(dead_code)]
     pub(crate) fn is_store_instruction<AB: ZKMAirBuilder>(
         &self,
         opcode_selectors: &OpcodeSelectorCols<AB::Var>,
@@ -100,7 +101,6 @@ impl CpuChip {
             local.op_b_val(),
             local.op_c_val(),
             local.shard,
-            memory_columns.addr_word_nonce,
             is_memory_instruction.clone(),
         );
 
@@ -202,7 +202,6 @@ impl CpuChip {
             local.unsigned_mem_val,
             signed_value,
             local.shard,
-            local.unsigned_mem_val_nonce,
             local.mem_value_is_neg_not_x0,
         );
 

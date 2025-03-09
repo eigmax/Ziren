@@ -11,9 +11,9 @@ use std::{mem::take, sync::Arc};
 
 use crate::{
     events::{
-        add_sharded_byte_lookup_events, AluEvent, ByteLookupEvent, ByteRecord, CpuEvent, LookupId,
-        MemoryInitializeFinalizeEvent, MemoryLocalEvent, MemoryRecordEnum, PrecompileEvent,
-        PrecompileEvents, SyscallEvent,
+        add_sharded_byte_lookup_events, AluEvent, ByteLookupEvent, ByteRecord, CpuEvent,
+        GlobalLookupEvent, MemoryInitializeFinalizeEvent, MemoryLocalEvent,
+        MemoryRecordEnum, PrecompileEvent, PrecompileEvents, SyscallEvent,
     },
     syscalls::SyscallCode,
     CoreShape, Opcode, Program,
@@ -57,21 +57,19 @@ pub struct ExecutionRecord {
     pub global_memory_finalize_events: Vec<MemoryInitializeFinalizeEvent>,
     /// A trace of all the shard's local memory events.
     pub cpu_local_memory_access: Vec<MemoryLocalEvent>,
-    // /// A trace of all the syscall events.
+    /// A trace of all the syscall events.
     pub syscall_events: Vec<SyscallEvent>,
-    // /// The public values.
+    /// A trace of all the global lookup events.
+    pub global_lookup_events: Vec<GlobalLookupEvent>,
+    /// The public values.
     pub public_values: PublicValues<u32, u32>,
-    /// The nonce lookup.
-    pub nonce_lookup: Vec<u32>,
-    /// The next nonce to use for a new lookup.
-    pub next_nonce: u64,
     /// The shape of the proof.
     pub shape: Option<CoreShape>,
 }
 
 impl Default for ExecutionRecord {
     fn default() -> Self {
-        let mut res = Self {
+        Self {
             program: Arc::default(),
             cpu_events: Vec::default(),
             add_events: Vec::default(),
@@ -89,13 +87,10 @@ impl Default for ExecutionRecord {
             global_memory_finalize_events: Vec::default(),
             cpu_local_memory_access: Vec::default(),
             syscall_events: Vec::default(),
+            global_lookup_events: Vec::default(),
             public_values: PublicValues::default(),
-            nonce_lookup: Vec::default(),
-            next_nonce: 0,
             shape: None,
-        };
-        res.nonce_lookup.insert(0, 0);
-        res
+        }
     }
 }
 
@@ -103,23 +98,7 @@ impl ExecutionRecord {
     /// Create a new [`ExecutionRecord`].
     #[must_use]
     pub fn new(program: Arc<Program>) -> Self {
-        let mut res = Self { program, ..Default::default() };
-        res.nonce_lookup.insert(0, 0);
-        res
-    }
-
-    /// Create a lookup id for an event.
-    pub fn create_lookup_id(&mut self) -> LookupId {
-        // let id = self.nonce_lookup.len() as u64;
-        let id = self.next_nonce;
-        self.next_nonce += 1;
-        //self.nonce_lookup.insert(id as usize, 0);
-        LookupId(id)
-    }
-
-    /// Create 6 lookup ids for an ALU event.
-    pub fn create_lookup_ids(&mut self) -> [LookupId; 5] {
-        std::array::from_fn(|_| self.create_lookup_id())
+        Self { program, ..Default::default() }
     }
 
     /// Add a mul event to the execution record.
@@ -389,44 +368,7 @@ impl MachineRecord for ExecutionRecord {
         self.global_memory_initialize_events.append(&mut other.global_memory_initialize_events);
         self.global_memory_finalize_events.append(&mut other.global_memory_finalize_events);
         self.cpu_local_memory_access.append(&mut other.cpu_local_memory_access);
-    }
-
-    fn register_nonces(&mut self, _opts: &Self::Config) {
-        self.add_events.iter().enumerate().for_each(|(i, event)| {
-            self.nonce_lookup[event.lookup_id.0 as usize] = i as u32;
-        });
-
-        self.sub_events.iter().enumerate().for_each(|(i, event)| {
-            self.nonce_lookup[event.lookup_id.0 as usize] = (self.add_events.len() + i) as u32;
-        });
-
-        self.mul_events.iter().enumerate().for_each(|(i, event)| {
-            self.nonce_lookup[event.lookup_id.0 as usize] = i as u32;
-        });
-
-        self.bitwise_events.iter().enumerate().for_each(|(i, event)| {
-            self.nonce_lookup[event.lookup_id.0 as usize] = i as u32;
-        });
-
-        self.shift_left_events.iter().enumerate().for_each(|(i, event)| {
-            self.nonce_lookup[event.lookup_id.0 as usize] = i as u32;
-        });
-
-        self.shift_right_events.iter().enumerate().for_each(|(i, event)| {
-            self.nonce_lookup[event.lookup_id.0 as usize] = i as u32;
-        });
-
-        self.divrem_events.iter().enumerate().for_each(|(i, event)| {
-            self.nonce_lookup[event.lookup_id.0 as usize] = i as u32;
-        });
-
-        self.lt_events.iter().enumerate().for_each(|(i, event)| {
-            self.nonce_lookup[event.lookup_id.0 as usize] = i as u32;
-        });
-
-        self.cloclz_events.iter().enumerate().for_each(|(i, event)| {
-            self.nonce_lookup[event.lookup_id.0 as usize] = i as u32;
-        });
+        self.global_lookup_events.append(&mut other.global_lookup_events);
     }
 
     /// Retrieves the public values.  This method is needed for the `MachineRecord` trait, since

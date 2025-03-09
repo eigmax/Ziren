@@ -2,11 +2,11 @@ use p3_air::BaseAir;
 use p3_field::Field;
 use p3_matrix::dense::RowMajorMatrix;
 
-use crate::MachineRecord;
+use crate::{septic_digest::SepticDigest, MachineRecord};
 
 pub use zkm2_derive::MachineAir;
 
-use super::InteractionScope;
+use super::LookupScope;
 
 /// An AIR that is part of a multi table AIR arithmetization.
 pub trait MachineAir<F: Field>: BaseAir<F> + 'static + Send + Sync {
@@ -45,8 +45,8 @@ pub trait MachineAir<F: Field>: BaseAir<F> + 'static + Send + Sync {
     }
 
     /// Specifies whether it's trace should be part of either the global or local commit.
-    fn commit_scope(&self) -> InteractionScope {
-        InteractionScope::Local
+    fn commit_scope(&self) -> LookupScope {
+        LookupScope::Local
     }
 
     /// Specifies whether the air only uses the local row, and not the next row.
@@ -59,4 +59,7 @@ pub trait MachineAir<F: Field>: BaseAir<F> + 'static + Send + Sync {
 pub trait MachineProgram<F>: Send + Sync {
     /// Gets the starting program counter.
     fn pc_start(&self) -> F;
+
+    /// Gets the initial global cumulative sum.
+    fn initial_global_cumulative_sum(&self) -> SepticDigest<F>;
 }

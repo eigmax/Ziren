@@ -6,7 +6,7 @@ use std::{fmt::Debug, marker::PhantomData};
 
 use crate::{air::MemoryAirBuilder, utils::zeroed_f_vec};
 use generic_array::GenericArray;
-use num::{BigUint, Zero};
+use num::BigUint;
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_field::{FieldAlgebra, PrimeField32};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
@@ -26,7 +26,7 @@ use zkm2_curves::{
     AffinePoint, CurveType, EllipticCurve,
 };
 use zkm2_derive::AlignedBorrow;
-use zkm2_stark::air::{InteractionScope, MachineAir, ZKMAirBuilder};
+use zkm2_stark::air::{LookupScope, MachineAir, ZKMAirBuilder};
 
 use crate::{
     memory::{MemoryCols, MemoryReadCols, MemoryWriteCols},
@@ -47,7 +47,6 @@ pub const fn num_weierstrass_add_cols<P: FieldParameters + NumWords>() -> usize 
 pub struct WeierstrassAddAssignCols<T, P: FieldParameters + NumWords> {
     pub is_real: T,
     pub shard: T,
-    pub nonce: T,
     pub clk: T,
     pub p_ptr: T,
     pub q_ptr: T,
@@ -219,7 +218,7 @@ impl<F: PrimeField32, E: EllipticCurve + WeierstrassParameters> MachineAir<F>
         let mut dummy_row = zeroed_f_vec(num_weierstrass_add_cols::<E::BaseField>());
         let cols: &mut WeierstrassAddAssignCols<F, E::BaseField> =
             dummy_row.as_mut_slice().borrow_mut();
-        let zero = BigUint::zero();
+        let zero = BigUint::ZERO;
         Self::populate_field_ops(
             &mut vec![],
             0,
@@ -252,18 +251,7 @@ impl<F: PrimeField32, E: EllipticCurve + WeierstrassParameters> MachineAir<F>
         });
 
         // Convert the trace to a row major matrix.
-        let mut trace = RowMajorMatrix::new(values, num_weierstrass_add_cols::<E::BaseField>());
-
-        // Write the nonces to the trace.
-        for i in 0..trace.height() {
-            let cols: &mut WeierstrassAddAssignCols<F, E::BaseField> = trace.values[i
-                * num_weierstrass_add_cols::<E::BaseField>()
-                ..(i + 1) * num_weierstrass_add_cols::<E::BaseField>()]
-                .borrow_mut();
-            cols.nonce = F::from_canonical_usize(i);
-        }
-
-        trace
+        RowMajorMatrix::new(values, num_weierstrass_add_cols::<E::BaseField>())
     }
 
     fn included(&self, shard: &Self::Record) -> bool {
@@ -285,6 +273,10 @@ impl<F: PrimeField32, E: EllipticCurve + WeierstrassParameters> MachineAir<F>
             }
         }
     }
+
+    fn local_only(&self) -> bool {
+        true
+    }
 }
 
 impl<F, E: EllipticCurve> BaseAir<F> for WeierstrassAddAssignChip<E> {
@@ -302,12 +294,6 @@ where
         let main = builder.main();
         let local = main.row_slice(0);
         let local: &WeierstrassAddAssignCols<AB::Var, E::BaseField> = (*local).borrow();
-        let next = main.row_slice(1);
-        let next: &WeierstrassAddAssignCols<AB::Var, E::BaseField> = (*next).borrow();
-
-        // Constrain the incrementing nonce.
-        builder.when_first_row().assert_zero(local.nonce);
-        builder.when_transition().assert_eq(local.nonce + AB::Expr::ONE, next.nonce);
 
         let num_words_field_element = <E::BaseField as NumLimbs>::Limbs::USIZE / 4;
 
@@ -418,12 +404,11 @@ where
         builder.receive_syscall(
             local.shard,
             local.clk,
-            local.nonce,
             syscall_id_felt,
             local.p_ptr,
             local.q_ptr,
             local.is_real,
-            InteractionScope::Local,
+            LookupScope::Local,
         );
     }
 }

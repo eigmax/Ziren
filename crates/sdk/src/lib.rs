@@ -29,7 +29,6 @@ pub mod utils {
     pub use zkm2_core_machine::utils::setup_logger;
 }
 
-use cfg_if::cfg_if;
 pub use proof::*;
 pub use provers::ZKMVerificationError;
 use zkm2_prover::components::DefaultProverComponents;
@@ -128,9 +127,10 @@ impl ProverClient {
     ///
     /// let client = ProverClient::mock();
     /// ```
-    // pub fn mock() -> Self {
-    //     Self { prover: Box::new(MockProver::new()) }
-    // }
+    pub fn mock() -> Self {
+        todo!();
+        // Self { prover: Box::new(MockProver::new()) }
+    }
 
     /// Creates a new [ProverClient] with the local prover, using the CPU.
     ///
@@ -187,22 +187,23 @@ impl ProverClient {
     ///
     /// let client = ProverClient::network(private_key, rpc_url, skip_simulation);
     /// ```
-    // #[cfg(any(feature = "network", feature = "network-v2"))]
-    // pub fn network(private_key: String, rpc_url: Option<String>, skip_simulation: bool) -> Self {
-    //     cfg_if! {
-    //         if #[cfg(feature = "network-v2")] {
-    //             Self {
-    //                 prover: Box::new(NetworkProverV2::new(&private_key, rpc_url, skip_simulation)),
-    //             }
-    //         } else if #[cfg(feature = "network")] {
-    //             Self {
-    //                 prover: Box::new(NetworkProverV1::new(&private_key, rpc_url, skip_simulation)),
-    //             }
-    //         } else {
-    //             panic!("network feature is not enabled")
-    //         }
-    //     }
-    // }
+    #[cfg(any(feature = "network", feature = "network-v2"))]
+    pub fn network(_private_key: String, _rpc_url: Option<String>, _skip_simulation: bool) -> Self {
+        todo!();
+        // cfg_if! {
+        //     if #[cfg(feature = "network-v2")] {
+        //         Self {
+        //             prover: Box::new(NetworkProverV2::new(&private_key, rpc_url, skip_simulation)),
+        //         }
+        //     } else if #[cfg(feature = "network")] {
+        //         Self {
+        //             prover: Box::new(NetworkProverV1::new(&private_key, rpc_url, skip_simulation)),
+        //         }
+        //     } else {
+        //         panic!("network feature is not enabled")
+        //     }
+        // }
+    }
 
     /// Prepare to execute the given program on the given input (without generating a proof).
     /// The returned [action::Execute] may be configured via its methods before running.
@@ -517,6 +518,8 @@ mod tests {
     #[test]
     fn test_e2e_compressed() {
         utils::setup_logger();
+        std::env::set_var("ZKM_DEV", "true");
+        std::env::set_var("FRI_QUERIES", "1");
         let client = ProverClient::cpu();
         let elf = test_artifacts::FIBONACCI_ELF;
         let (pk, vk) = client.setup(elf);
@@ -538,6 +541,8 @@ mod tests {
     fn test_e2e_prove_plonk() {
         std::env::set_var("ZKM_DEV", "true");
         utils::setup_logger();
+        std::env::set_var("ZKM_DEV", "true");
+        std::env::set_var("FRI_QUERIES", "1");
         let client = ProverClient::cpu();
         let elf = test_artifacts::FIBONACCI_ELF;
         let (pk, vk) = client.setup(elf);
@@ -560,6 +565,8 @@ mod tests {
     fn test_e2e_prove_groth16() {
         std::env::set_var("ZKM_DEV", "true");
         utils::setup_logger();
+        std::env::set_var("ZKM_DEV", "true");
+        std::env::set_var("FRI_QUERIES", "1");
         let client = ProverClient::cpu();
         let elf = test_artifacts::HELLO_WORLD_ELF;
         let (pk, vk) = client.setup(elf);

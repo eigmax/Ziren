@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use num::{BigUint, Zero};
+use num::BigUint;
 use p3_air::AirBuilder;
 use p3_field::{FieldAlgebra, PrimeField32};
 use zkm2_core_executor::events::ByteRecord;
@@ -44,7 +44,7 @@ impl<F: PrimeField32, P: FieldParameters> FieldInnerProductCols<F, P> {
             b.iter().map(|x| P::to_limbs_field::<F, _>(x).into()).collect();
 
         let modulus = &P::modulus();
-        let inner_product = a.iter().zip(b.iter()).fold(BigUint::zero(), |acc, (c, d)| acc + c * d);
+        let inner_product = a.iter().zip(b.iter()).fold(BigUint::ZERO, |acc, (c, d)| acc + c * d);
 
         let result = &(&inner_product % modulus);
         let carry = &((&inner_product - result) / modulus);

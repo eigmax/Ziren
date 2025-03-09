@@ -5,7 +5,7 @@ use crate::{
     utils::{limbs_from_access, pad_rows_fixed, words_to_bytes_le},
 };
 
-use num::{BigUint, One, Zero};
+use num::{BigUint, One};
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_field::FieldAlgebra;
 use p3_field::PrimeField32;
@@ -26,7 +26,7 @@ use zkm2_curves::{
 };
 use zkm2_derive::AlignedBorrow;
 use zkm2_stark::{
-    air::{BaseAirBuilder, InteractionScope, MachineAir, Polynomial, ZKMAirBuilder},
+    air::{BaseAirBuilder, LookupScope, MachineAir, Polynomial, ZKMAirBuilder},
     MachineRecord,
 };
 
@@ -55,9 +55,6 @@ pub struct U256x2048MulCols<T> {
 
     /// The clock cycle of the syscall.
     pub clk: T,
-
-    /// The nonce of the operation.
-    pub nonce: T,
 
     /// The pointer to the first input.
     pub a_ptr: T,
@@ -168,7 +165,7 @@ impl<F: PrimeField32> MachineAir<F> for U256x2048MulChip {
 
                         let effective_modulus = BigUint::one() << 256;
 
-                        let mut carries = vec![BigUint::zero(); 9];
+                        let mut carries = vec![BigUint::ZERO; 9];
                         let mut ab_plus_carry_cols = [
                             &mut cols.a_mul_b1,
                             &mut cols.ab2_plus_carry,
@@ -212,9 +209,9 @@ impl<F: PrimeField32> MachineAir<F> for U256x2048MulChip {
                 let mut row: [F; NUM_COLS] = [F::ZERO; NUM_COLS];
                 let cols: &mut U256x2048MulCols<F> = row.as_mut_slice().borrow_mut();
 
-                let x = BigUint::zero();
-                let y = BigUint::zero();
-                let z = BigUint::zero();
+                let x = BigUint::ZERO;
+                let y = BigUint::ZERO;
+                let z = BigUint::ZERO;
                 let modulus = BigUint::one() << 256;
 
                 // Populate all the mul and carry columns with zero values.
@@ -233,17 +230,7 @@ impl<F: PrimeField32> MachineAir<F> for U256x2048MulChip {
         );
 
         // Convert the trace to a row major matrix.
-        let mut trace =
-            RowMajorMatrix::new(rows.into_iter().flatten().collect::<Vec<_>>(), NUM_COLS);
-
-        // Write the nonces to the trace.
-        for i in 0..trace.height() {
-            let cols: &mut U256x2048MulCols<F> =
-                trace.values[i * NUM_COLS..(i + 1) * NUM_COLS].borrow_mut();
-            cols.nonce = F::from_canonical_usize(i);
-        }
-
-        trace
+        RowMajorMatrix::new(rows.into_iter().flatten().collect::<Vec<_>>(), NUM_COLS)
     }
 
     fn included(&self, shard: &Self::Record) -> bool {
@@ -269,8 +256,6 @@ where
         let main = builder.main();
         let local = main.row_slice(0);
         let local: &U256x2048MulCols<AB::Var> = (*local).borrow();
-        let next = main.row_slice(1);
-        let next: &U256x2048MulCols<AB::Var> = (*next).borrow();
 
         // Assert that is_real is a boolean.
         builder.assert_bool(local.is_real);
@@ -279,12 +264,11 @@ where
         builder.receive_syscall(
             local.shard,
             local.clk,
-            local.nonce,
             AB::F::from_canonical_u32(SyscallCode::U256XU2048_MUL.syscall_id()),
             local.a_ptr,
             local.b_ptr,
             local.is_real,
-            InteractionScope::Local,
+            LookupScope::Local,
         );
 
         // Evaluate that the lo_ptr and hi_ptr are read from the correct memory locations.
@@ -337,10 +321,6 @@ where
             &local.hi_memory,
             local.is_real,
         );
-
-        // Constrain the incrementing nonce.
-        builder.when_first_row().assert_zero(local.nonce);
-        builder.when_transition().assert_eq(local.nonce + AB::Expr::ONE, next.nonce);
 
         let a_limbs =
             limbs_from_access::<AB::Var, <U256Field as NumLimbs>::Limbs, _>(&local.a_memory);

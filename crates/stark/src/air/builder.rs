@@ -9,8 +9,10 @@ use p3_uni_stark::{
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumIter};
 
-use super::{interaction::AirInteraction, BinomialExtension};
-use crate::{lookup::InteractionKind, Word};
+use super::{lookup::AirLookup, BinomialExtension};
+use crate::{
+    lookup::LookupKind, septic_digest::SepticDigest, septic_extension::SepticExtension, Word,
+};
 
 /// The scope of an interaction.
 #[derive(
@@ -27,7 +29,7 @@ use crate::{lookup::InteractionKind, Word};
     Serialize,
     Deserialize,
 )]
-pub enum InteractionScope {
+pub enum LookupScope {
     /// Global scope.
     Global = 0,
     /// Local scope.
@@ -37,23 +39,23 @@ pub enum InteractionScope {
 /// A builder that can send and receive messages (or interactions) with other AIRs.
 pub trait MessageBuilder<M> {
     /// Sends a message.
-    fn send(&mut self, message: M, scope: InteractionScope);
+    fn send(&mut self, message: M, scope: LookupScope);
 
     /// Receives a message.
-    fn receive(&mut self, message: M, scope: InteractionScope);
+    fn receive(&mut self, message: M, scope: LookupScope);
 }
 
 /// A message builder for which sending and receiving messages is a no-op.
 pub trait EmptyMessageBuilder: AirBuilder {}
 
 impl<AB: EmptyMessageBuilder, M> MessageBuilder<M> for AB {
-    fn send(&mut self, _message: M, _scope: InteractionScope) {}
+    fn send(&mut self, _message: M, _scope: LookupScope) {}
 
-    fn receive(&mut self, _message: M, _scope: InteractionScope) {}
+    fn receive(&mut self, _message: M, _scope: LookupScope) {}
 }
 
 /// A trait which contains basic methods for building an AIR.
-pub trait BaseAirBuilder: AirBuilder + MessageBuilder<AirInteraction<Self::Expr>> {
+pub trait BaseAirBuilder: AirBuilder + MessageBuilder<AirLookup<Self::Expr>> {
     /// Returns a sub-builder whose constraints are enforced only when `condition` is not one.
     fn when_not<I: Into<Self::Expr>>(&mut self, condition: I) -> FilteredAirBuilder<Self> {
         self.when_ne(condition, Self::F::ONE)
@@ -131,12 +133,12 @@ pub trait ByteAirBuilder: BaseAirBuilder {
         multiplicity: impl Into<Self::Expr>,
     ) {
         self.send(
-            AirInteraction::new(
+            AirLookup::new(
                 vec![opcode.into(), a1.into(), a2.into(), b.into(), c.into()],
                 multiplicity.into(),
-                InteractionKind::Byte,
+                LookupKind::Byte,
             ),
-            InteractionScope::Local,
+            LookupScope::Local,
         );
     }
 
@@ -165,12 +167,12 @@ pub trait ByteAirBuilder: BaseAirBuilder {
         multiplicity: impl Into<Self::Expr>,
     ) {
         self.receive(
-            AirInteraction::new(
+            AirLookup::new(
                 vec![opcode.into(), a1.into(), a2.into(), b.into(), c.into()],
                 multiplicity.into(),
-                InteractionKind::Byte,
+                LookupKind::Byte,
             ),
-            InteractionScope::Local,
+            LookupScope::Local,
         );
     }
 }
@@ -186,19 +188,9 @@ pub trait AluAirBuilder: BaseAirBuilder {
         b: Word<impl Into<Self::Expr>>,
         c: Word<impl Into<Self::Expr>>,
         shard: impl Into<Self::Expr>,
-        nonce: impl Into<Self::Expr>,
         multiplicity: impl Into<Self::Expr>,
     ) {
-        self.send_alu_with_hi(
-            opcode,
-            a,
-            b,
-            c,
-            Word([Self::F::ZERO; 4]),
-            shard,
-            nonce,
-            multiplicity,
-        );
+        self.send_alu_with_hi(opcode, a, b, c, Word([Self::F::ZERO; 4]), shard, multiplicity);
     }
 
     /// Sends an ALU operation with HI to be processed.
@@ -212,7 +204,6 @@ pub trait AluAirBuilder: BaseAirBuilder {
         // HI register is MULT MULTU DIV DIVU
         hi: Word<impl Into<Self::Expr>>,
         shard: impl Into<Self::Expr>,
-        nonce: impl Into<Self::Expr>,
         multiplicity: impl Into<Self::Expr>,
     ) {
         let values = once(opcode.into())
@@ -221,12 +212,11 @@ pub trait AluAirBuilder: BaseAirBuilder {
             .chain(c.0.into_iter().map(Into::into))
             .chain(hi.0.into_iter().map(Into::into))
             .chain(once(shard.into()))
-            .chain(once(nonce.into()))
             .collect();
 
         self.send(
-            AirInteraction::new(values, multiplicity.into(), InteractionKind::Alu),
-            InteractionScope::Local,
+            AirLookup::new(values, multiplicity.into(), LookupKind::Alu),
+            LookupScope::Local,
         );
     }
 
@@ -239,19 +229,9 @@ pub trait AluAirBuilder: BaseAirBuilder {
         b: Word<impl Into<Self::Expr>>,
         c: Word<impl Into<Self::Expr>>,
         shard: impl Into<Self::Expr>,
-        nonce: impl Into<Self::Expr>,
         multiplicity: impl Into<Self::Expr>,
     ) {
-        self.receive_alu_with_hi(
-            opcode,
-            a,
-            b,
-            c,
-            Word([Self::F::ZERO; 4]),
-            shard,
-            nonce,
-            multiplicity,
-        );
+        self.receive_alu_with_hi(opcode, a, b, c, Word([Self::F::ZERO; 4]), shard, multiplicity);
     }
 
     /// Receives an ALU operation with HI to be processed.
@@ -264,7 +244,6 @@ pub trait AluAirBuilder: BaseAirBuilder {
         c: Word<impl Into<Self::Expr>>,
         hi: Word<impl Into<Self::Expr>>,
         shard: impl Into<Self::Expr>,
-        nonce: impl Into<Self::Expr>,
         multiplicity: impl Into<Self::Expr>,
     ) {
         let values = once(opcode.into())
@@ -273,12 +252,11 @@ pub trait AluAirBuilder: BaseAirBuilder {
             .chain(c.0.into_iter().map(Into::into))
             .chain(hi.0.into_iter().map(Into::into))
             .chain(once(shard.into()))
-            .chain(once(nonce.into()))
             .collect();
 
         self.receive(
-            AirInteraction::new(values, multiplicity.into(), InteractionKind::Alu),
-            InteractionScope::Local,
+            AirLookup::new(values, multiplicity.into(), LookupKind::Alu),
+            LookupScope::Local,
         );
     }
 
@@ -288,25 +266,23 @@ pub trait AluAirBuilder: BaseAirBuilder {
         &mut self,
         shard: impl Into<Self::Expr> + Clone,
         clk: impl Into<Self::Expr> + Clone,
-        nonce: impl Into<Self::Expr> + Clone,
         syscall_id: impl Into<Self::Expr> + Clone,
         arg1: impl Into<Self::Expr> + Clone,
         arg2: impl Into<Self::Expr> + Clone,
         multiplicity: impl Into<Self::Expr>,
-        scope: InteractionScope,
+        scope: LookupScope,
     ) {
         self.send(
-            AirInteraction::new(
+            AirLookup::new(
                 vec![
                     shard.clone().into(),
                     clk.clone().into(),
-                    nonce.clone().into(),
                     syscall_id.clone().into(),
                     arg1.clone().into(),
                     arg2.clone().into(),
                 ],
                 multiplicity.into(),
-                InteractionKind::Syscall,
+                LookupKind::Syscall,
             ),
             scope,
         );
@@ -318,28 +294,40 @@ pub trait AluAirBuilder: BaseAirBuilder {
         &mut self,
         shard: impl Into<Self::Expr> + Clone,
         clk: impl Into<Self::Expr> + Clone,
-        nonce: impl Into<Self::Expr> + Clone,
         syscall_id: impl Into<Self::Expr> + Clone,
         arg1: impl Into<Self::Expr> + Clone,
         arg2: impl Into<Self::Expr> + Clone,
         multiplicity: impl Into<Self::Expr>,
-        scope: InteractionScope,
+        scope: LookupScope,
     ) {
         self.receive(
-            AirInteraction::new(
+            AirLookup::new(
                 vec![
                     shard.clone().into(),
                     clk.clone().into(),
-                    nonce.clone().into(),
                     syscall_id.clone().into(),
                     arg1.clone().into(),
                     arg2.clone().into(),
                 ],
                 multiplicity.into(),
-                InteractionKind::Syscall,
+                LookupKind::Syscall,
             ),
             scope,
         );
+    }
+}
+
+/// A builder that can operation on septic extension elements.
+pub trait SepticExtensionAirBuilder: BaseAirBuilder {
+    /// Asserts that the two field extensions are equal.
+    fn assert_septic_ext_eq<I: Into<Self::Expr>>(
+        &mut self,
+        left: SepticExtension<I>,
+        right: SepticExtension<I>,
+    ) {
+        for (left, right) in left.0.into_iter().zip(right.0) {
+            self.assert_eq(left, right);
+        }
     }
 }
 
@@ -383,17 +371,23 @@ pub trait ExtensionAirBuilder: BaseAirBuilder {
 
 /// A builder that implements a permutation argument.
 pub trait MultiTableAirBuilder<'a>: PermutationAirBuilder {
-    /// The type of the cumulative sum.
-    type Sum: Into<Self::ExprEF> + Copy;
+    /// The type of the local cumulative sum.
+    type LocalSum: Into<Self::ExprEF> + Copy;
 
-    /// Returns the cumulative sum of the permutation.
-    fn cumulative_sums(&self) -> &'a [Self::Sum];
+    /// The type of the global cumulative sum;
+    type GlobalSum: Into<Self::Expr> + Copy;
+
+    /// Returns the local cumulative sum of the permutation.
+    fn local_cumulative_sum(&self) -> &'a Self::LocalSum;
+
+    /// Returns the global cumulative sum of the permutation.
+    fn global_cumulative_sum(&self) -> &'a SepticDigest<Self::GlobalSum>;
 }
 
 /// A trait that contains the common helper methods for building `ZKM recursion` and ZKM machine
 /// AIRs.
 pub trait MachineAirBuilder:
-    BaseAirBuilder + ExtensionAirBuilder + AirBuilderWithPublicValues
+    BaseAirBuilder + ExtensionAirBuilder + SepticExtensionAirBuilder + AirBuilderWithPublicValues
 {
 }
 
@@ -401,20 +395,21 @@ pub trait MachineAirBuilder:
 pub trait ZKMAirBuilder: MachineAirBuilder + ByteAirBuilder + AluAirBuilder {}
 
 impl<AB: AirBuilder + MessageBuilder<M>, M> MessageBuilder<M> for FilteredAirBuilder<'_, AB> {
-    fn send(&mut self, message: M, scope: InteractionScope) {
+    fn send(&mut self, message: M, scope: LookupScope) {
         self.inner.send(message, scope);
     }
 
-    fn receive(&mut self, message: M, scope: InteractionScope) {
+    fn receive(&mut self, message: M, scope: LookupScope) {
         self.inner.receive(message, scope);
     }
 }
 
-impl<AB: AirBuilder + MessageBuilder<AirInteraction<AB::Expr>>> BaseAirBuilder for AB {}
+impl<AB: AirBuilder + MessageBuilder<AirLookup<AB::Expr>>> BaseAirBuilder for AB {}
 impl<AB: BaseAirBuilder> ByteAirBuilder for AB {}
 impl<AB: BaseAirBuilder> AluAirBuilder for AB {}
 
 impl<AB: BaseAirBuilder> ExtensionAirBuilder for AB {}
+impl<AB: BaseAirBuilder> SepticExtensionAirBuilder for AB {}
 impl<AB: BaseAirBuilder + AirBuilderWithPublicValues> MachineAirBuilder for AB {}
 impl<AB: BaseAirBuilder + AirBuilderWithPublicValues> ZKMAirBuilder for AB {}
 

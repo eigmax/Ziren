@@ -145,7 +145,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use num::{BigUint, One, Zero};
+    use num::{BigUint, One};
     use p3_air::BaseAir;
     use p3_field::{Field, PrimeField32};
     use zkm2_core_executor::{ExecutionRecord, Program};
@@ -215,7 +215,7 @@ mod tests {
                 .collect();
 
             // hardcoded edge cases.
-            operands.extend(vec![BigUint::zero(), BigUint::one()]);
+            operands.extend(vec![BigUint::ZERO, BigUint::one()]);
 
             let rows = operands
                 .iter()

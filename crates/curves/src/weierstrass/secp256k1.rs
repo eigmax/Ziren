@@ -8,7 +8,7 @@ use generic_array::GenericArray;
 use k256::{elliptic_curve::point::DecompressPoint, FieldElement};
 use num::{
     traits::{FromBytes, ToBytes},
-    BigUint, Zero,
+    BigUint,
 };
 use serde::{Deserialize, Serialize};
 use typenum::{U32, U62};
@@ -84,7 +84,7 @@ impl WeierstrassParameters for Secp256k1Parameters {
     }
 
     fn a_int() -> BigUint {
-        BigUint::zero()
+        BigUint::ZERO
     }
 
     fn b_int() -> BigUint {

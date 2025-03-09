@@ -5,7 +5,7 @@ use p3_field::FieldAlgebra;
 use p3_keccak_air::{KeccakAir, NUM_KECCAK_COLS, NUM_ROUNDS, U64_LIMBS};
 use p3_matrix::Matrix;
 use zkm2_core_executor::syscalls::SyscallCode;
-use zkm2_stark::air::{InteractionScope, SubAirBuilder, ZKMAirBuilder};
+use zkm2_stark::air::{LookupScope, SubAirBuilder, ZKMAirBuilder};
 
 use super::{
     columns::{KeccakMemCols, NUM_KECCAK_MEM_COLS},
@@ -32,10 +32,6 @@ where
         let (local, next) = (main.row_slice(0), main.row_slice(1));
         let local: &KeccakMemCols<AB::Var> = (*local).borrow();
         let next: &KeccakMemCols<AB::Var> = (*next).borrow();
-
-        // Constrain the incrementing nonce.
-        builder.when_first_row().assert_zero(local.nonce);
-        builder.when_transition().assert_eq(local.nonce + AB::Expr::ONE, next.nonce);
 
         let first_step = local.keccak.step_flags[0];
         let final_step = local.keccak.step_flags[NUM_ROUNDS - 1];
@@ -66,12 +62,11 @@ where
         builder.receive_syscall(
             local.shard,
             local.clk,
-            local.nonce,
             AB::F::from_canonical_u32(SyscallCode::KECCAK_PERMUTE.syscall_id()),
             local.state_addr,
             AB::Expr::ZERO,
             local.receive_syscall,
-            InteractionScope::Local,
+            LookupScope::Local,
         );
 
         // Constrain that the inputs stay the same throughout the 24 rows of each cycle

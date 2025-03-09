@@ -7,13 +7,13 @@ use p3_uni_stark::{get_max_constraint_degree, SymbolicAirBuilder};
 use p3_util::log2_ceil_usize;
 
 use crate::{
-    air::{MachineAir, MultiTableAirBuilder, ZKMAirBuilder},
-    lookup::{Interaction, InteractionBuilder, InteractionKind},
+    air::{LookupScope, MachineAir, MultiTableAirBuilder, ZKMAirBuilder},
+    local_permutation_trace_width,
+    lookup::{Interaction, InteractionBuilder, LookupKind},
+    scoped_interactions,
 };
 
-use super::{
-    eval_permutation_constraints, generate_permutation_trace, get_grouped_maps, PROOF_MAX_NUM_PVS,
-};
+use super::{eval_permutation_constraints, generate_permutation_trace, PROOF_MAX_NUM_PVS};
 
 /// An Air that encodes lookups based on interactions.
 pub struct Chip<F: Field, A> {
@@ -70,8 +70,8 @@ where
         air.eval(&mut builder);
         let (sends, receives) = builder.interactions();
 
-        let nb_byte_sends = sends.iter().filter(|s| s.kind == InteractionKind::Byte).count();
-        let nb_byte_receives = receives.iter().filter(|r| r.kind == InteractionKind::Byte).count();
+        let nb_byte_sends = sends.iter().filter(|s| s.kind == LookupKind::Byte).count();
+        let nb_byte_receives = receives.iter().filter(|r| r.kind == LookupKind::Byte).count();
         tracing::debug!(
             "chip {} has {} byte interactions",
             air.name(),
@@ -98,18 +98,18 @@ where
     /// Returns the number of sent byte lookups in the chip.
     #[inline]
     pub fn num_sent_byte_lookups(&self) -> usize {
-        self.sends.iter().filter(|i| i.kind == InteractionKind::Byte).count()
+        self.sends.iter().filter(|i| i.kind == LookupKind::Byte).count()
     }
 
     /// Returns the number of sends of the given kind.
     #[inline]
-    pub fn num_sends_by_kind(&self, kind: InteractionKind) -> usize {
+    pub fn num_sends_by_kind(&self, kind: LookupKind) -> usize {
         self.sends.iter().filter(|i| i.kind == kind).count()
     }
 
     /// Returns the number of receives of the given kind.
     #[inline]
-    pub fn num_receives_by_kind(&self, kind: InteractionKind) -> usize {
+    pub fn num_receives_by_kind(&self, kind: LookupKind) -> usize {
         self.receives.iter().filter(|i| i.kind == kind).count()
     }
 
@@ -119,13 +119,13 @@ where
         preprocessed: Option<&RowMajorMatrix<F>>,
         main: &RowMajorMatrix<F>,
         random_elements: &[EF],
-    ) -> (RowMajorMatrix<EF>, EF, EF)
+    ) -> (RowMajorMatrix<EF>, EF)
     where
         F: PrimeField,
         A: MachineAir<F>,
     {
         let batch_size = self.logup_batch_size();
-        generate_permutation_trace(
+        generate_permutation_trace::<F, EF>(
             &self.sends,
             &self.receives,
             preprocessed,
@@ -138,10 +138,15 @@ where
     /// Returns the width of the permutation trace.
     #[inline]
     pub fn permutation_width(&self) -> usize {
-        let (_, _, grouped_widths) =
-            get_grouped_maps(self.sends(), self.receives(), self.logup_batch_size());
+        let (scoped_sends, scoped_receives) = scoped_interactions(self.sends(), self.receives());
+        let empty = Vec::new();
+        let local_sends = scoped_sends.get(&LookupScope::Local).unwrap_or(&empty);
+        let local_receives = scoped_receives.get(&LookupScope::Local).unwrap_or(&empty);
 
-        grouped_widths.values().sum()
+        local_permutation_trace_width(
+            local_sends.len() + local_receives.len(),
+            self.logup_batch_size(),
+        )
     }
 
     /// Returns the cost of a row in the chip.
@@ -210,7 +215,7 @@ where
         self.air.included(shard)
     }
 
-    fn commit_scope(&self) -> crate::air::InteractionScope {
+    fn commit_scope(&self) -> crate::air::LookupScope {
         self.air.commit_scope()
     }
 
@@ -223,7 +228,7 @@ where
 impl<'a, F, A, AB> Air<AB> for Chip<F, A>
 where
     F: Field,
-    A: Air<AB>,
+    A: Air<AB> + MachineAir<F>,
     AB: ZKMAirBuilder<F = F> + MultiTableAirBuilder<'a> + PairBuilder + 'a,
 {
     fn eval(&self, builder: &mut AB) {
@@ -231,7 +236,13 @@ where
         self.air.eval(builder);
         // Evaluate permutation constraints.
         let batch_size = self.logup_batch_size();
-        eval_permutation_constraints(&self.sends, &self.receives, batch_size, builder);
+        eval_permutation_constraints(
+            &self.sends,
+            &self.receives,
+            batch_size,
+            self.air.commit_scope(),
+            builder,
+        );
     }
 }
 

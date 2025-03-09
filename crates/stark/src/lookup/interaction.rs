@@ -3,7 +3,7 @@ use core::fmt::{Debug, Display};
 use p3_air::VirtualPairCol;
 use p3_field::Field;
 
-use crate::air::InteractionScope;
+use crate::air::LookupScope;
 
 /// An interaction for a lookup or a permutation argument.
 #[derive(Clone)]
@@ -13,14 +13,14 @@ pub struct Interaction<F: Field> {
     /// The multiplicity of the interaction.
     pub multiplicity: VirtualPairCol<F>,
     /// The kind of interaction.
-    pub kind: InteractionKind,
+    pub kind: LookupKind,
     /// The scope of the interaction.
-    pub scope: InteractionScope,
+    pub scope: LookupScope,
 }
 
 /// The type of interaction for a lookup argument.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum InteractionKind {
+pub enum LookupKind {
     /// Interaction with the memory table, such as read and write.
     Memory = 1,
 
@@ -44,21 +44,25 @@ pub enum InteractionKind {
 
     /// Interaction with a syscall.
     Syscall = 8,
+
+    /// Interaction with the global table.
+    Global = 9,
 }
 
-impl InteractionKind {
+impl LookupKind {
     /// Returns all kinds of interactions.
     #[must_use]
-    pub fn all_kinds() -> Vec<InteractionKind> {
+    pub fn all_kinds() -> Vec<LookupKind> {
         vec![
-            InteractionKind::Memory,
-            InteractionKind::Program,
-            InteractionKind::Instruction,
-            InteractionKind::Alu,
-            InteractionKind::Byte,
-            InteractionKind::Range,
-            InteractionKind::Field,
-            InteractionKind::Syscall,
+            LookupKind::Memory,
+            LookupKind::Program,
+            LookupKind::Instruction,
+            LookupKind::Alu,
+            LookupKind::Byte,
+            LookupKind::Range,
+            LookupKind::Field,
+            LookupKind::Syscall,
+            LookupKind::Global,
         ]
     }
 }
@@ -68,8 +72,8 @@ impl<F: Field> Interaction<F> {
     pub const fn new(
         values: Vec<VirtualPairCol<F>>,
         multiplicity: VirtualPairCol<F>,
-        kind: InteractionKind,
-        scope: InteractionScope,
+        kind: LookupKind,
+        scope: LookupScope,
     ) -> Self {
         Self { values, multiplicity, kind, scope }
     }
@@ -89,17 +93,18 @@ impl<F: Field> Debug for Interaction<F> {
     }
 }
 
-impl Display for InteractionKind {
+impl Display for LookupKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            InteractionKind::Memory => write!(f, "Memory"),
-            InteractionKind::Program => write!(f, "Program"),
-            InteractionKind::Instruction => write!(f, "Instruction"),
-            InteractionKind::Alu => write!(f, "Alu"),
-            InteractionKind::Byte => write!(f, "Byte"),
-            InteractionKind::Range => write!(f, "Range"),
-            InteractionKind::Field => write!(f, "Field"),
-            InteractionKind::Syscall => write!(f, "Syscall"),
+            LookupKind::Memory => write!(f, "Memory"),
+            LookupKind::Program => write!(f, "Program"),
+            LookupKind::Instruction => write!(f, "Instruction"),
+            LookupKind::Alu => write!(f, "Alu"),
+            LookupKind::Byte => write!(f, "Byte"),
+            LookupKind::Range => write!(f, "Range"),
+            LookupKind::Field => write!(f, "Field"),
+            LookupKind::Syscall => write!(f, "Syscall"),
+            LookupKind::Global => write!(f, "Global"),
         }
     }
 }

@@ -7,14 +7,16 @@ use std::array;
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_field::{FieldAlgebra, PrimeField32};
 use p3_matrix::{dense::RowMajorMatrix, Matrix};
-use zkm2_core_executor::{events::MemoryInitializeFinalizeEvent, ExecutionRecord, Program};
+use p3_maybe_rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
+use zkm2_core_executor::events::{GlobalLookupEvent, MemoryInitializeFinalizeEvent};
+use zkm2_core_executor::{ExecutionRecord, Program};
 use zkm2_derive::AlignedBorrow;
 use zkm2_stark::{
     air::{
-        AirInteraction, BaseAirBuilder, InteractionScope, MachineAir, PublicValues, ZKMAirBuilder,
+        AirLookup, BaseAirBuilder, LookupScope, MachineAir, PublicValues, ZKMAirBuilder,
         ZKM_PROOF_NUM_PV_ELTS,
     },
-    InteractionKind, Word,
+    LookupKind, Word,
 };
 
 use crate::{
@@ -54,8 +56,37 @@ impl<F: PrimeField32> MachineAir<F> for MemoryGlobalChip {
         }
     }
 
-    fn generate_dependencies(&self, _input: &ExecutionRecord, _output: &mut ExecutionRecord) {
-        // Do nothing since this chip has no dependencies.
+    fn generate_dependencies(&self, input: &ExecutionRecord, output: &mut ExecutionRecord) {
+        let mut memory_events = match self.kind {
+            MemoryChipType::Initialize => input.global_memory_initialize_events.clone(),
+            MemoryChipType::Finalize => input.global_memory_finalize_events.clone(),
+        };
+
+        let is_receive = match self.kind {
+            MemoryChipType::Initialize => false,
+            MemoryChipType::Finalize => true,
+        };
+
+        memory_events.sort_by_key(|event| event.addr);
+
+        let events = memory_events.into_iter().map(|event| {
+            let interaction_shard = if is_receive { event.shard } else { 0 };
+            let interaction_clk = if is_receive { event.timestamp } else { 0 };
+            GlobalLookupEvent {
+                message: [
+                    interaction_shard,
+                    interaction_clk,
+                    event.addr,
+                    (event.value & 255) as u32,
+                    ((event.value >> 8) & 255) as u32,
+                    ((event.value >> 16) & 255) as u32,
+                    ((event.value >> 24) & 255) as u32,
+                ],
+                is_receive,
+                kind: LookupKind::Memory as u8,
+            }
+        });
+        output.global_lookup_events.extend(events);
     }
 
     fn generate_trace(
@@ -74,10 +105,11 @@ impl<F: PrimeField32> MachineAir<F> for MemoryGlobalChip {
         };
 
         memory_events.sort_by_key(|event| event.addr);
-        let mut rows: Vec<[F; NUM_MEMORY_INIT_COLS]> = (0..memory_events.len()) // OPT: change this to par_iter
-            .map(|i| {
+        let mut rows: Vec<[F; NUM_MEMORY_INIT_COLS]> = memory_events
+            .par_iter()
+            .map(|event| {
                 let MemoryInitializeFinalizeEvent { addr, value, shard, timestamp, used } =
-                    memory_events[i];
+                    event.to_owned();
 
                 let mut row = [F::ZERO; NUM_MEMORY_INIT_COLS];
                 let cols: &mut MemoryInitCols<F> = row.as_mut_slice().borrow_mut();
@@ -88,39 +120,42 @@ impl<F: PrimeField32> MachineAir<F> for MemoryGlobalChip {
                 cols.value = array::from_fn(|i| F::from_canonical_u32((value >> i) & 1));
                 cols.is_real = F::from_canonical_u32(used);
 
-                if i == 0 {
-                    let prev_addr = previous_addr_bits
-                        .iter()
-                        .enumerate()
-                        .map(|(j, bit)| bit * (1 << j))
-                        .sum::<u32>();
-                    cols.is_prev_addr_zero.populate(prev_addr);
-                    cols.is_first_comp = F::from_bool(prev_addr != 0);
-                    if prev_addr != 0 {
-                        debug_assert!(prev_addr < addr, "prev_addr {} < addr {}", prev_addr, addr);
-                        let addr_bits: [_; 32] = array::from_fn(|i| (addr >> i) & 1);
-                        cols.lt_cols.populate(&previous_addr_bits, &addr_bits);
-                    }
-                }
-
-                if i != 0 {
-                    let prev_is_real = memory_events[i - 1].used;
-                    cols.is_next_comp = F::from_canonical_u32(prev_is_real);
-                    let previous_addr = memory_events[i - 1].addr;
-                    assert_ne!(previous_addr, addr);
-
-                    let addr_bits: [_; 32] = array::from_fn(|i| (addr >> i) & 1);
-                    let prev_addr_bits: [_; 32] = array::from_fn(|i| (previous_addr >> i) & 1);
-                    cols.lt_cols.populate(&prev_addr_bits, &addr_bits);
-                }
-
-                if i == memory_events.len() - 1 {
-                    cols.is_last_addr = F::ONE;
-                }
-
                 row
             })
             .collect::<Vec<_>>();
+
+        for i in 0..memory_events.len() {
+            let addr = memory_events[i].addr;
+            let cols: &mut MemoryInitCols<F> = rows[i].as_mut_slice().borrow_mut();
+            if i == 0 {
+                let prev_addr = previous_addr_bits
+                    .iter()
+                    .enumerate()
+                    .map(|(j, bit)| bit * (1 << j))
+                    .sum::<u32>();
+                cols.is_prev_addr_zero.populate(prev_addr);
+                cols.is_first_comp = F::from_bool(prev_addr != 0);
+                if prev_addr != 0 {
+                    debug_assert!(prev_addr < addr, "prev_addr {} < addr {}", prev_addr, addr);
+                    let addr_bits: [_; 32] = array::from_fn(|i| (addr >> i) & 1);
+                    cols.lt_cols.populate(&previous_addr_bits, &addr_bits);
+                }
+            }
+            if i != 0 {
+                let prev_is_real = memory_events[i - 1].used;
+                cols.is_next_comp = F::from_canonical_u32(prev_is_real);
+                let previous_addr = memory_events[i - 1].addr;
+                assert_ne!(previous_addr, addr);
+
+                let addr_bits: [_; 32] = array::from_fn(|i| (addr >> i) & 1);
+                let prev_addr_bits: [_; 32] = array::from_fn(|i| (previous_addr >> i) & 1);
+                cols.lt_cols.populate(&prev_addr_bits, &addr_bits);
+            }
+
+            if i == memory_events.len() - 1 {
+                cols.is_last_addr = F::ONE;
+            }
+        }
 
         // Pad the trace to a power of two depending on the proof shape in `input`.
         pad_rows_fixed(
@@ -143,14 +178,14 @@ impl<F: PrimeField32> MachineAir<F> for MemoryGlobalChip {
         }
     }
 
-    fn commit_scope(&self) -> InteractionScope {
-        InteractionScope::Global
+    fn commit_scope(&self) -> LookupScope {
+        LookupScope::Local
     }
 }
 
-#[derive(AlignedBorrow, Debug, Clone, Copy)]
+#[derive(AlignedBorrow, Clone, Copy)]
 #[repr(C)]
-pub struct MemoryInitCols<T> {
+pub struct MemoryInitCols<T: Copy> {
     /// The shard number of the memory access.
     pub shard: T,
 
@@ -217,17 +252,51 @@ where
 
         if self.kind == MemoryChipType::Initialize {
             let mut values = vec![AB::Expr::ZERO, AB::Expr::ZERO, local.addr.into()];
-            values.extend(value.map(Into::into));
+            values.extend(value.clone().map(Into::into));
+
+            // Send the interaction to the global table.
             builder.send(
-                AirInteraction::new(values, local.is_real.into(), InteractionKind::Memory),
-                InteractionScope::Global,
+                AirLookup::new(
+                    vec![
+                        AB::Expr::ZERO,
+                        AB::Expr::ZERO,
+                        local.addr.into(),
+                        value[0].clone(),
+                        value[1].clone(),
+                        value[2].clone(),
+                        value[3].clone(),
+                        local.is_real.into() * AB::Expr::ONE,
+                        local.is_real.into() * AB::Expr::ZERO,
+                        AB::Expr::from_canonical_u8(LookupKind::Memory as u8),
+                    ],
+                    local.is_real.into(),
+                    LookupKind::Global,
+                ),
+                LookupScope::Local,
             );
         } else {
             let mut values = vec![local.shard.into(), local.timestamp.into(), local.addr.into()];
-            values.extend(value);
-            builder.receive(
-                AirInteraction::new(values, local.is_real.into(), InteractionKind::Memory),
-                InteractionScope::Global,
+            values.extend(value.clone());
+
+            // Send the interaction to the global table.
+            builder.send(
+                AirLookup::new(
+                    vec![
+                        local.shard.into(),
+                        local.timestamp.into(),
+                        local.addr.into(),
+                        value[0].clone(),
+                        value[1].clone(),
+                        value[2].clone(),
+                        value[3].clone(),
+                        local.is_real.into() * AB::Expr::ZERO,
+                        local.is_real.into() * AB::Expr::ONE,
+                        AB::Expr::from_canonical_u8(LookupKind::Memory as u8),
+                    ],
+                    local.is_real.into(),
+                    LookupKind::Global,
+                ),
+                LookupScope::Local,
             );
         }
 
@@ -416,16 +485,16 @@ mod tests {
                 &machine,
                 &pkey,
                 &[shard],
-                vec![InteractionKind::Memory],
-                InteractionScope::Local,
+                vec![LookupKind::Memory],
+                LookupScope::Local,
             );
         }
         debug_interactions_with_all_chips::<KoalaBearPoseidon2, MipsAir<KoalaBear>>(
             &machine,
             &pkey,
             &shards,
-            vec![InteractionKind::Memory],
-            InteractionScope::Global,
+            vec![LookupKind::Memory],
+            LookupScope::Global,
         );
     }
 
@@ -446,8 +515,8 @@ mod tests {
             &machine,
             &pkey,
             &shards,
-            vec![InteractionKind::Byte],
-            InteractionScope::Global,
+            vec![LookupKind::Byte],
+            LookupScope::Global,
         );
     }
 }
