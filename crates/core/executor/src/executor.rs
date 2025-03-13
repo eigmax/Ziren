@@ -689,7 +689,7 @@ impl<'a> Executor<'a> {
             Opcode::SLL => {
                 self.record.shift_left_events.push(event);
             }
-            Opcode::SRL | Opcode::SRA => {
+            Opcode::SRL | Opcode::SRA | Opcode::ROR => {
                 self.record.shift_right_events.push(event);
             }
             Opcode::SLT | Opcode::SLTU => {
@@ -955,6 +955,7 @@ impl<'a> Executor<'a> {
             | Opcode::SLL
             | Opcode::SRL
             | Opcode::SRA
+            | Opcode::ROR
             | Opcode::SLT
             | Opcode::SLTU
             | Opcode::AND
@@ -964,6 +965,14 @@ impl<'a> Executor<'a> {
             | Opcode::CLZ
             | Opcode::CLO => {
                 (hi, a, b, c) = self.execute_alu(instruction);
+            }
+
+            Opcode::MADDU => {
+                (hi, a, b, c) = self.execute_maddu(instruction);
+            }
+
+            Opcode::MSUBU => {
+                (hi, a, b, c) = self.execute_msubu(instruction);
             }
 
             // Load instructions.
@@ -1017,6 +1026,23 @@ impl<'a> Executor<'a> {
             Opcode::TEQ => {
                 (a, b, c) = self.execute_teq(instruction);
             }
+
+            Opcode::SEXT => {
+                (a, b, c) = self.execute_sext(instruction);
+            }
+
+            Opcode::WSBH => {
+                (a, b, c) = self.execute_wsbh(instruction);
+            }
+
+            Opcode::EXT => {
+                (a, b, c) = self.execute_ext(instruction);
+            }
+
+            Opcode::INS => {
+                (a, b, c) = self.execute_ins(instruction);
+            }
+
             Opcode::UNIMPL => {
                 return Err(ExecutionError::UnsupportedInstruction(instruction.op_c));
             }
@@ -1045,6 +1071,103 @@ impl<'a> Executor<'a> {
             );
         };
         Ok(())
+    }
+
+    fn execute_maddu(&mut self, instruction: &Instruction) -> (Option<u32>, u32, u32, u32) {
+        let (lo, rt, rs) = (
+            instruction.op_a.into(),
+            (instruction.op_b as u8).into(),
+            (instruction.op_c as u8).into()
+        );
+        let b = self.rr(rt, MemoryAccessPosition::B);
+        let c = self.rr(rs, MemoryAccessPosition::C);
+        let multiply = b as u64 * c as u64;
+        let lo_val = self.register(32.into());
+        let hi_val = self.register(33.into());
+        let addend = ((hi_val as u64) << 32) + lo_val as u64;
+        let out = multiply + addend;
+        let out_lo = out as u32;
+        let out_hi = (out >> 32) as u32;
+        self.rw(lo, out_lo, MemoryAccessPosition::A);
+        self.rw(Register::HI, out_hi , MemoryAccessPosition::HI);
+        (Some(out_hi), out_lo, b, c)
+    }
+
+    fn execute_msubu(&mut self, instruction: &Instruction) -> (Option<u32>, u32, u32, u32) {
+        let (lo, rt, rs) = (
+            instruction.op_a.into(),
+            (instruction.op_b as u8).into(),
+            (instruction.op_c as u8).into()
+        );
+        let b = self.rr(rt, MemoryAccessPosition::B);
+        let c = self.rr(rs, MemoryAccessPosition::C);
+        let multiply = b as u64 * c as u64;
+        let lo_val = self.register(32.into());
+        let hi_val = self.register(33.into());
+        let addend = ((hi_val as u64) << 32) + lo_val as u64;
+        let out = addend - multiply;
+        let out_lo = out as u32;
+        let out_hi = (out >> 32) as u32;
+        self.rw(lo, out_lo, MemoryAccessPosition::A);
+        self.rw(Register::HI, out_hi , MemoryAccessPosition::HI);
+        (Some(out_hi), out_lo, b, c)
+    }
+
+    fn execute_sext(&mut self, instruction: &Instruction) -> (u32, u32, u32) {
+        let (rd, rt) = (
+            instruction.op_a.into(),
+            (instruction.op_b as u8).into()
+        );
+        let b = self.rr(rt, MemoryAccessPosition::B);
+        let a = (b & 0xff) as i8 as i32 as u32;
+        self.rw(rd, a, MemoryAccessPosition::A);
+        (a, b, 0)
+    }
+
+    fn execute_wsbh(&mut self, instruction: &Instruction) -> (u32, u32, u32) {
+        let (rd, rt) = (
+            instruction.op_a.into(),
+            (instruction.op_b as u8).into()
+        );
+        let b = self.rr(rt, MemoryAccessPosition::B);
+        let a = (((b >> 16) & 0xFF) << 24)
+            | (((b >> 24) & 0xFF) << 16)
+            | ((b & 0xFF) << 8)
+            | ((b >> 8) & 0xFF);
+        self.rw(rd, a, MemoryAccessPosition::A);
+        (a, b, 0)
+    }
+
+    fn execute_ext(&mut self, instruction: &Instruction) -> (u32, u32, u32) {
+        let (rd, rt, c) = (
+            instruction.op_a.into(),
+            (instruction.op_b as u8).into(),
+            instruction.op_c
+        );
+        let b = self.rr(rt, MemoryAccessPosition::B);
+        let msbd =  c >> 5;
+        let lsb = c & 0x1f;
+        let mask_msb = (1 << (msbd + lsb + 1)) - 1;
+        let a = (b & mask_msb) >> lsb;
+        self.rw(rd, a, MemoryAccessPosition::A);
+        (a, b, c)
+    }
+
+    fn execute_ins(&mut self, instruction: &Instruction) -> (u32, u32, u32) {
+        let (rd, rt, c) = (
+            instruction.op_a.into(),
+            (instruction.op_b as u8).into(),
+            instruction.op_c
+        );
+        let b = self.rr(rt, MemoryAccessPosition::B);
+        let a = self.register(rd);
+        let msb =  c >> 5;
+        let lsb = c & 0x1f;
+        let mask = (1 << (msb - lsb + 1)) - 1;
+        let mask_field = mask << lsb;
+        let a = (a & !mask_field) | ((b << lsb) & mask_field);
+        self.rw(rd, a, MemoryAccessPosition::A);
+        (a, b, c)
     }
 
     fn execute_teq(&mut self, instruction: &Instruction) -> (u32, u32, u32) {
@@ -1095,6 +1218,11 @@ impl<'a> Executor<'a> {
             Opcode::SRA => {
                 // same as SRA
                 let sin = b as i32;
+                let sout = sin >> (c & 0x1f);
+                (sout as u32, 0)
+            }
+            Opcode::ROR => {
+                let sin = (b as u64) + ((b as u64) << 32);
                 let sout = sin >> (c & 0x1f);
                 (sout as u32, 0)
             }
@@ -1369,7 +1497,8 @@ impl<'a> Executor<'a> {
                     as usize;
                 let shift_left_count = self.report.event_counts[Opcode::SLL] as usize;
                 let shift_right_count = (self.report.event_counts[Opcode::SRL]
-                    + self.report.event_counts[Opcode::SRA])
+                    + self.report.event_counts[Opcode::SRA]
+                    + self.report.event_counts[Opcode::ROR] )
                     as usize;
                 let divrem_count = (self.report.event_counts[Opcode::DIV]
                     + self.report.event_counts[Opcode::DIVU])

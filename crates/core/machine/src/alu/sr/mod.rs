@@ -124,6 +124,9 @@ pub struct ShiftRightCols<T> {
     /// If the opcode is SRL.
     pub is_srl: T,
 
+    /// If the opcode is ROR.
+    pub is_ror: T,
+
     /// If the opcode is SRA.
     pub is_sra: T,
 
@@ -222,6 +225,7 @@ impl ShiftRightChip {
 
             cols.is_srl = F::from_bool(event.opcode == Opcode::SRL);
             cols.is_sra = F::from_bool(event.opcode == Opcode::SRA);
+            cols.is_ror = F::from_bool(event.opcode == Opcode::ROR);
 
             cols.is_real = F::ONE;
 
@@ -254,6 +258,8 @@ impl ShiftRightChip {
                 if event.opcode == Opcode::SRA {
                     // Sign extension is necessary only for arithmetic right shift.
                     ((event.b as i32) as i64).to_le_bytes()
+                } else if event.opcode == Opcode::ROR {
+                    (((event.b as u64) << 32) | (event.b as u64)).to_le_bytes()
                 } else {
                     (event.b as u64).to_le_bytes()
                 }
@@ -389,12 +395,12 @@ where
         // Byte shift the sign-extended b.
         {
             // The leading bytes of b should be 0xff if b's MSB is 1 & opcode = SRA, 0 otherwise.
-            let leading_byte = local.is_sra * local.b_msb * AB::Expr::from_canonical_u8(0xff);
             let mut sign_extended_b: Vec<AB::Expr> = vec![];
             for i in 0..WORD_SIZE {
                 sign_extended_b.push(local.b[i].into());
             }
-            for _ in 0..WORD_SIZE {
+            for i in 0..WORD_SIZE {
+                let leading_byte = local.is_sra * local.b_msb * AB::Expr::from_canonical_u8(0xff) + local.is_ror * local.b[i].into();
                 sign_extended_b.push(leading_byte.clone());
             }
 
@@ -458,7 +464,7 @@ where
 
         // Check that the flags are indeed boolean.
         {
-            let flags = [local.is_srl, local.is_sra, local.is_real, local.b_msb];
+            let flags = [local.is_srl, local.is_sra, local.is_ror, local.is_real, local.b_msb];
             for flag in flags.iter() {
                 builder.assert_bool(*flag);
             }
@@ -490,15 +496,17 @@ where
         // Check that the operation flags are boolean.
         builder.assert_bool(local.is_srl);
         builder.assert_bool(local.is_sra);
+        builder.assert_bool(local.is_ror);
         builder.assert_bool(local.is_real);
 
         // Check that is_real is the sum of the two operation flags.
-        builder.assert_eq(local.is_srl + local.is_sra, local.is_real);
+        builder.assert_eq(local.is_srl + local.is_sra + local.is_ror, local.is_real);
 
         // Receive the arguments.
         builder.receive_alu(
             local.is_srl * AB::F::from_canonical_u32(Opcode::SRL as u32)
-                + local.is_sra * AB::F::from_canonical_u32(Opcode::SRA as u32),
+                + local.is_sra * AB::F::from_canonical_u32(Opcode::SRA as u32)
+                + local.is_ror * AB::F::from_canonical_u32(Opcode::ROR as u32),
             local.a,
             local.b,
             local.c,

@@ -63,6 +63,13 @@ pub enum Opcode {
     NOP = 43,
     SYSCALL = 44,
     TEQ = 45,
+    SEXT = 46,
+    WSBH = 47,
+    EXT = 48,
+    ROR = 49,
+    MADDU = 50,
+    MSUBU = 51,
+    INS = 52,
     UNIMPL = 0xff,
 }
 
@@ -117,6 +124,13 @@ impl Opcode {
             Opcode::TEQ => "teq",
             Opcode::NOP => "nop",
             Opcode::SYSCALL => "syscall",
+            Opcode::SEXT => "seb",
+            Opcode::WSBH => "wsbh",
+            Opcode::EXT => "ext",
+            Opcode::INS => "ins",
+            Opcode::ROR => "ror",
+            Opcode::MADDU => "maddu",
+            Opcode::MSUBU => "msubu",
             Opcode::UNIMPL => "unimpl",
         }
     }
@@ -129,7 +143,7 @@ impl Opcode {
     
     pub fn is_use_lo_hi_alu(&self) -> bool {
         match self {
-            Opcode::DIV | Opcode::DIVU | Opcode::MULT | Opcode::MULTU => true,
+            Opcode::DIV | Opcode::DIVU | Opcode::MULT | Opcode::MULTU | Opcode::MADDU | Opcode::MSUBU => true,
             _ => false,
         }
     }
