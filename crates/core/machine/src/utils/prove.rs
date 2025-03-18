@@ -9,6 +9,7 @@ use web_time::Instant;
 
 use crate::mips::MipsAir;
 use p3_maybe_rayon::prelude::*;
+use p3_uni_stark::SymbolicAirBuilder;
 use serde::{de::DeserializeOwned, Serialize};
 use size::Size;
 use std::thread::ScopedJoinHandle;
@@ -392,6 +393,10 @@ where
                                         }
                                     }
 
+                                    rayon::spawn(move || {
+                                        drop(record);
+                                    });
+
                                     proof
                                 },
                             ),
@@ -541,7 +546,8 @@ where
     A: MachineAir<SC::Val>
         + Air<LookupBuilder<Val<SC>>>
         + for<'a> Air<VerifierConstraintFolder<'a, SC>>
-        + for<'a> Air<DebugConstraintBuilder<'a, Val<SC>, SC::Challenge>>,
+        + for<'a> Air<DebugConstraintBuilder<'a, Val<SC>, SC::Challenge>>
+        + Air<SymbolicAirBuilder<SC::Val>>,
     A::Record: MachineRecord<Config = ZKMCoreOpts>,
     SC: StarkGenericConfig,
     SC::Val: p3_field::PrimeField32,
@@ -582,7 +588,8 @@ where
         + for<'a> Air<ProverConstraintFolder<'a, SC>>
         + Air<LookupBuilder<Val<SC>>>
         + for<'a> Air<VerifierConstraintFolder<'a, SC>>
-        + for<'a> Air<DebugConstraintBuilder<'a, Val<SC>, SC::Challenge>>,
+        + for<'a> Air<DebugConstraintBuilder<'a, Val<SC>, SC::Challenge>>
+        + Air<SymbolicAirBuilder<SC::Val>>,
     A::Record: MachineRecord<Config = ZKMCoreOpts>,
     SC: StarkGenericConfig,
     SC::Val: p3_field::PrimeField32,
@@ -604,6 +611,8 @@ fn trace_checkpoint<SC: StarkGenericConfig>(
 where
     <SC as StarkGenericConfig>::Val: PrimeField32,
 {
+    let noop = NoOpSubproofVerifier;
+
     let mut reader = std::io::BufReader::new(file);
     let state: ExecutionState =
         bincode::deserialize_from(&mut reader).expect("failed to deserialize state");
@@ -614,7 +623,7 @@ where
 
     // We already passed the deferred proof verifier when creating checkpoints, so the proofs were
     // already verified. So here we use a noop verifier to not print any warnings.
-    runtime.subproof_verifier = Arc::new(NoOpSubproofVerifier);
+    runtime.subproof_verifier = Some(&noop);
 
     // Execute from the checkpoint.
     let (records, _) = runtime.execute_record(true).unwrap();
