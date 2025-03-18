@@ -1,0 +1,608 @@
+{
+  "17": [
+    {
+      "inner": {
+        "Bitwise": 15,
+        "ShiftRight": 15,
+        "Mul": 1,
+        "Cpu": 17,
+        "Global": 12,
+        "Lt": 5,
+        "MemoryLocal": 9,
+        "AddSub": 16,
+        "ShiftLeft": 13
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 15,
+        "ShiftRight": 13,
+        "Mul": 2,
+        "Cpu": 17,
+        "Global": 12,
+        "Lt": 6,
+        "MemoryLocal": 9,
+        "AddSub": 16,
+        "ShiftLeft": 14
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 14,
+        "ShiftRight": 10,
+        "Mul": 11,
+        "SyscallCore": 2,
+        "Cpu": 17,
+        "Global": 14,
+        "Lt": 13,
+        "MemoryLocal": 11,
+        "CloClz": 7,
+        "AddSub": 17,
+        "DivRem": 1,
+        "ShiftLeft": 14
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 13,
+        "ShiftRight": 12,
+        "Mul": 10,
+        "Cpu": 17,
+        "Global": 14,
+        "Lt": 12,
+        "MemoryLocal": 11,
+        "CloClz": 7,
+        "AddSub": 16,
+        "ShiftLeft": 13
+      }
+    },
+    {
+      "inner": {
+        "AddSub": 17,
+        "Cpu": 17,
+        "Global": 17,
+        "Lt": 13,
+        "MemoryLocal": 14
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 11,
+        "ShiftRight": 10,
+        "Mul": 0,
+        "Cpu": 17,
+        "Global": 17,
+        "Lt": 13,
+        "MemoryLocal": 14,
+        "AddSub": 17,
+        "ShiftLeft": 7
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 16,
+        "Mul": 0,
+        "Cpu": 17,
+        "Global": 8,
+        "MemoryLocal": 5,
+        "Lt": 15,
+        "AddSub": 16,
+        "ShiftLeft": 5
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 15,
+        "ShiftRight": 10,
+        "Mul": 0,
+        "Cpu": 16,
+        "Global": 9,
+        "Lt": 13,
+        "MemoryLocal": 6,
+        "AddSub": 15,
+        "ShiftLeft": 7
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 16,
+        "ShiftRight": 15,
+        "Mul": 7,
+        "Cpu": 17,
+        "Global": 10,
+        "Lt": 10,
+        "MemoryLocal": 7,
+        "AddSub": 16,
+        "ShiftLeft": 12
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 16,
+        "ShiftRight": 13,
+        "Mul": 5,
+        "Cpu": 17,
+        "Global": 10,
+        "Lt": 9,
+        "MemoryLocal": 7,
+        "AddSub": 16,
+        "ShiftLeft": 13
+      }
+    }
+  ],
+  "18": [
+    {
+      "inner": {
+        "Bitwise": 16,
+        "ShiftRight": 15,
+        "Mul": 2,
+        "Cpu": 18,
+        "Global": 12,
+        "Lt": 8,
+        "MemoryLocal": 9,
+        "AddSub": 16,
+        "ShiftLeft": 13
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 17,
+        "ShiftRight": 14,
+        "Mul": 2,
+        "Cpu": 18,
+        "Global": 12,
+        "Lt": 6,
+        "MemoryLocal": 9,
+        "AddSub": 17,
+        "ShiftLeft": 15
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 16,
+        "ShiftRight": 14,
+        "Mul": 1,
+        "Cpu": 18,
+        "Global": 11,
+        "Lt": 8,
+        "MemoryLocal": 8,
+        "AddSub": 16,
+        "ShiftLeft": 14
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 14,
+        "ShiftRight": 10,
+        "Mul": 12,
+        "SyscallCore": 2,
+        "Cpu": 18,
+        "Global": 14,
+        "Lt": 14,
+        "MemoryLocal": 11,
+        "CloClz": 8,
+        "AddSub": 18,
+        "DivRem": 1,
+        "ShiftLeft": 15
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 13,
+        "ShiftRight": 12,
+        "Mul": 10,
+        "Cpu": 17,
+        "Global": 14,
+        "Lt": 12,
+        "MemoryLocal": 11,
+        "CloClz": 7,
+        "AddSub": 16,
+        "ShiftLeft": 13
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 17,
+        "Mul": 0,
+        "Cpu": 18,
+        "Global": 8,
+        "MemoryLocal": 5,
+        "Lt": 16,
+        "AddSub": 17,
+        "ShiftLeft": 5
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 16,
+        "ShiftRight": 10,
+        "Mul": 0,
+        "Cpu": 18,
+        "Global": 9,
+        "Lt": 15,
+        "MemoryLocal": 6,
+        "AddSub": 16,
+        "ShiftLeft": 7
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 5,
+        "Mul": 0,
+        "Cpu": 18,
+        "Global": 17,
+        "MemoryLocal": 14,
+        "Lt": 4,
+        "AddSub": 18,
+        "ShiftLeft": 6
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 3,
+        "MemoryLocal": 15,
+        "AddSub": 18,
+        "Cpu": 18,
+        "Global": 18,
+        "Lt": 14,
+        "ShiftLeft": 2
+      }
+    },
+    {
+      "inner": {
+        "AddSub": 18,
+        "Cpu": 18,
+        "Global": 18,
+        "Lt": 14,
+        "MemoryLocal": 15
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 11,
+        "ShiftRight": 10,
+        "Mul": 0,
+        "Cpu": 17,
+        "Global": 17,
+        "Lt": 13,
+        "MemoryLocal": 14,
+        "AddSub": 17,
+        "ShiftLeft": 7
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 17,
+        "ShiftRight": 16,
+        "Mul": 8,
+        "Cpu": 18,
+        "Global": 10,
+        "Lt": 11,
+        "MemoryLocal": 7,
+        "AddSub": 17,
+        "ShiftLeft": 13
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 17,
+        "ShiftRight": 14,
+        "Mul": 6,
+        "Cpu": 18,
+        "Global": 10,
+        "Lt": 10,
+        "MemoryLocal": 7,
+        "AddSub": 17,
+        "ShiftLeft": 14
+      }
+    }
+  ],
+  "19": [
+    {
+      "inner": {
+        "Bitwise": 17,
+        "ShiftRight": 15,
+        "Mul": 3,
+        "Cpu": 19,
+        "Global": 12,
+        "Lt": 8,
+        "MemoryLocal": 9,
+        "AddSub": 18,
+        "ShiftLeft": 15
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 15,
+        "ShiftRight": 12,
+        "Mul": 12,
+        "SyscallCore": 2,
+        "Cpu": 19,
+        "Global": 15,
+        "Lt": 14,
+        "MemoryLocal": 12,
+        "CloClz": 8,
+        "AddSub": 18,
+        "DivRem": 1,
+        "ShiftLeft": 15
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 18,
+        "Mul": 0,
+        "Cpu": 19,
+        "Global": 8,
+        "MemoryLocal": 5,
+        "Lt": 17,
+        "AddSub": 18,
+        "ShiftLeft": 5
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 18,
+        "ShiftRight": 10,
+        "Mul": 0,
+        "Cpu": 19,
+        "Global": 9,
+        "Lt": 16,
+        "MemoryLocal": 6,
+        "AddSub": 18,
+        "ShiftLeft": 7
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 5,
+        "Mul": 0,
+        "Cpu": 19,
+        "Global": 18,
+        "MemoryLocal": 15,
+        "Lt": 4,
+        "AddSub": 19,
+        "ShiftLeft": 6
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 3,
+        "MemoryLocal": 16,
+        "AddSub": 19,
+        "Cpu": 19,
+        "Global": 19,
+        "Lt": 15,
+        "ShiftLeft": 2
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 11,
+        "ShiftRight": 10,
+        "Mul": 0,
+        "Cpu": 17,
+        "Global": 17,
+        "Lt": 13,
+        "MemoryLocal": 14,
+        "AddSub": 17,
+        "ShiftLeft": 7
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 18,
+        "ShiftRight": 17,
+        "Mul": 9,
+        "Cpu": 19,
+        "Global": 10,
+        "Lt": 12,
+        "MemoryLocal": 7,
+        "AddSub": 18,
+        "ShiftLeft": 14
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 18,
+        "ShiftRight": 15,
+        "Mul": 7,
+        "Cpu": 19,
+        "Global": 10,
+        "Lt": 11,
+        "MemoryLocal": 7,
+        "AddSub": 18,
+        "ShiftLeft": 15
+      }
+    }
+  ],
+  "20": [
+    {
+      "inner": {
+        "Bitwise": 17,
+        "ShiftRight": 15,
+        "Mul": 3,
+        "Cpu": 19,
+        "Global": 12,
+        "Lt": 8,
+        "MemoryLocal": 9,
+        "AddSub": 18,
+        "ShiftLeft": 15
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 15,
+        "ShiftRight": 12,
+        "Mul": 12,
+        "SyscallCore": 2,
+        "Cpu": 19,
+        "Global": 15,
+        "Lt": 14,
+        "MemoryLocal": 12,
+        "CloClz": 8,
+        "AddSub": 18,
+        "DivRem": 1,
+        "ShiftLeft": 15
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 5,
+        "Mul": 0,
+        "Cpu": 20,
+        "Global": 19,
+        "MemoryLocal": 16,
+        "Lt": 15,
+        "AddSub": 20,
+        "ShiftLeft": 6
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 11,
+        "ShiftRight": 10,
+        "Mul": 0,
+        "Cpu": 17,
+        "Global": 17,
+        "Lt": 13,
+        "MemoryLocal": 14,
+        "AddSub": 17,
+        "ShiftLeft": 7
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 19,
+        "Mul": 0,
+        "Cpu": 20,
+        "Global": 8,
+        "MemoryLocal": 5,
+        "Lt": 18,
+        "AddSub": 19,
+        "ShiftLeft": 5
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 18,
+        "ShiftRight": 10,
+        "Mul": 0,
+        "Cpu": 19,
+        "Global": 9,
+        "Lt": 16,
+        "MemoryLocal": 6,
+        "AddSub": 18,
+        "ShiftLeft": 7
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 19,
+        "ShiftRight": 18,
+        "Mul": 9,
+        "Cpu": 20,
+        "Global": 10,
+        "Lt": 13,
+        "MemoryLocal": 7,
+        "AddSub": 19,
+        "ShiftLeft": 15
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 19,
+        "ShiftRight": 16,
+        "Mul": 8,
+        "Cpu": 20,
+        "Global": 10,
+        "Lt": 12,
+        "MemoryLocal": 7,
+        "AddSub": 19,
+        "ShiftLeft": 16
+      }
+    }
+  ],
+  "21": [
+    {
+      "inner": {
+        "Bitwise": 17,
+        "ShiftRight": 15,
+        "Mul": 3,
+        "Cpu": 19,
+        "Global": 12,
+        "Lt": 8,
+        "MemoryLocal": 9,
+        "AddSub": 18,
+        "ShiftLeft": 15
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 15,
+        "ShiftRight": 12,
+        "Mul": 12,
+        "SyscallCore": 2,
+        "Cpu": 19,
+        "Global": 15,
+        "Lt": 14,
+        "MemoryLocal": 12,
+        "CloClz": 8,
+        "AddSub": 18,
+        "DivRem": 1,
+        "ShiftLeft": 15
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 19,
+        "ShiftRight": 19,
+        "Mul": 10,
+        "Cpu": 21,
+        "Global": 10,
+        "Lt": 14,
+        "MemoryLocal": 7,
+        "AddSub": 20,
+        "ShiftLeft": 16
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 19,
+        "ShiftRight": 10,
+        "Mul": 1,
+        "Cpu": 21,
+        "Global": 9,
+        "Lt": 18,
+        "MemoryLocal": 6,
+        "AddSub": 19,
+        "ShiftLeft": 7
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 11,
+        "ShiftRight": 10,
+        "Mul": 1,
+        "Cpu": 20,
+        "Global": 19,
+        "Lt": 15,
+        "MemoryLocal": 16,
+        "AddSub": 20,
+        "ShiftLeft": 8
+      }
+    },
+    {
+      "inner": {
+        "Bitwise": 20,
+        "ShiftRight": 17,
+        "Mul": 9,
+        "Cpu": 21,
+        "Global": 10,
+        "Lt": 13,
+        "MemoryLocal": 7,
+        "AddSub": 20,
+        "ShiftLeft": 17
+      }
+    }
+  ]
+}

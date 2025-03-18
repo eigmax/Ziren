@@ -1,13 +1,15 @@
+use enum_map::EnumMap;
 use hashbrown::HashMap;
 use itertools::{EitherOrBoth, Itertools};
 use p3_field::{FieldAlgebra, PrimeField};
 use zkm2_stark::{
     air::{MachineAir, PublicValues},
+    shape::Shape,
     MachineRecord, SplitOpts, ZKMCoreOpts,
 };
 
 use serde::{Deserialize, Serialize};
-use std::{mem::take, sync::Arc};
+use std::{mem::take, sync::Arc, str::FromStr};
 
 use crate::{
     events::{
@@ -16,7 +18,7 @@ use crate::{
         MemoryRecordEnum, PrecompileEvent, PrecompileEvents, SyscallEvent,
     },
     syscalls::SyscallCode,
-    CoreShape, Opcode, Program,
+    MipsAirId, Opcode, Program,
 };
 
 /// A record of the execution of a program.
@@ -64,7 +66,9 @@ pub struct ExecutionRecord {
     /// The public values.
     pub public_values: PublicValues<u32, u32>,
     /// The shape of the proof.
-    pub shape: Option<CoreShape>,
+    pub shape: Option<Shape<MipsAirId>>,
+    /// The predicted counts of the proof.
+    pub counts: Option<EnumMap<MipsAirId, u64>>,
 }
 
 impl Default for ExecutionRecord {
@@ -90,6 +94,7 @@ impl Default for ExecutionRecord {
             global_lookup_events: Vec::default(),
             public_values: PublicValues::default(),
             shape: None,
+            counts: None,
         }
     }
 }
@@ -240,15 +245,11 @@ impl ExecutionRecord {
     /// Return the number of rows needed for a chip, according to the proof shape specified in the
     /// struct.
     pub fn fixed_log2_rows<F: PrimeField, A: MachineAir<F>>(&self, air: &A) -> Option<usize> {
-        self.shape
-            .as_ref()
-            .map(|shape| {
-                shape
-                    .inner
-                    .get(&air.name())
-                    .unwrap_or_else(|| panic!("Chip {} not found in specified shape", air.name()))
-            })
-            .copied()
+        self.shape.as_ref().map(|shape| {
+            shape
+                .log2_height(&MipsAirId::from_str(&air.name()).unwrap())
+                .unwrap_or_else(|| panic!("Chip {} not found in specified shape", air.name()))
+        })
     }
 
     /// Determines whether the execution record contains CPU events.

@@ -13,22 +13,22 @@ use thiserror::Error;
 use p3_field::FieldAlgebra;
 use p3_koala_bear::KoalaBear;
 use serde::{Deserialize, Serialize};
-use zkm2_core_machine::mips::CoreShapeConfig;
+use zkm2_core_machine::shape::CoreShapeConfig;
 use zkm2_recursion_circuit::machine::{
     ZKMCompressWithVKeyWitnessValues, ZKMCompressWithVkeyShape, ZKMDeferredShape,
     ZKMDeferredWitnessValues, ZKMRecursionShape, ZKMRecursionWitnessValues,
 };
-use zkm2_recursion_core::{shape::RecursionShapeConfig, RecursionProgram};
-use zkm2_stark::{MachineProver, ProofShape, DIGEST_SIZE};
+use zkm2_recursion_core::{shape::{RecursionShape, RecursionShapeConfig}, RecursionProgram};
+use zkm2_stark::{shape::OrderedShape, MachineProver, DIGEST_SIZE};
 
-use crate::{components::ZKMProverComponents, CompressAir, HashableKey, ZKMProver};
+use crate::{components::ZKMProverComponents, CompressAir, HashableKey, ZKMProver, ShrinkAir};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum ZKMProofShape {
-    Recursion(ProofShape),
-    Compress(Vec<ProofShape>),
-    Deferred(ProofShape),
-    Shrink(ProofShape),
+    Recursion(OrderedShape),
+    Compress(Vec<OrderedShape>),
+    Deferred(OrderedShape),
+    Shrink(OrderedShape),
 }
 
 #[derive(Debug, Clone, Hash)]
@@ -55,6 +55,79 @@ pub enum VkBuildError {
     Bincode(#[from] bincode::Error),
 }
 
+pub fn check_shapes<C: ZKMProverComponents>(
+    reduce_batch_size: usize,
+    no_precompiles: bool,
+    num_compiler_workers: usize,
+    prover: &ZKMProver<C>,
+) -> bool {
+    let (shape_tx, shape_rx) =
+        std::sync::mpsc::sync_channel::<ZKMCompressProgramShape>(num_compiler_workers);
+    let (panic_tx, panic_rx) = std::sync::mpsc::channel();
+    let core_shape_config = prover.core_shape_config.as_ref().expect("core shape config not found");
+    let recursion_shape_config =
+        prover.compress_shape_config.as_ref().expect("recursion shape config not found");
+
+    let shape_rx = Mutex::new(shape_rx);
+
+    let all_maximal_shapes = ZKMProofShape::generate_maximal_shapes(
+        core_shape_config,
+        recursion_shape_config,
+        reduce_batch_size,
+        no_precompiles,
+    )
+    .collect::<BTreeSet<ZKMProofShape>>();
+    let num_shapes = all_maximal_shapes.len();
+    tracing::info!("number of shapes: {}", num_shapes);
+
+    // The Merkle tree height.
+    let height = num_shapes.next_power_of_two().ilog2() as usize;
+
+    let compress_ok = std::thread::scope(|s| {
+        // Initialize compiler workers.
+        for _ in 0..num_compiler_workers {
+            let shape_rx = &shape_rx;
+            let prover = &prover;
+            let panic_tx = panic_tx.clone();
+            s.spawn(move || {
+                while let Ok(shape) = shape_rx.lock().unwrap().recv() {
+                    tracing::info!("shape is {:?}", shape);
+                    let program = catch_unwind(AssertUnwindSafe(|| {
+                        // Try to build the recursion program from the given shape.
+                        prover.program_from_shape(shape.clone(), None)
+                    }));
+                    match program {
+                        Ok(_) => {}
+                        Err(e) => {
+                            tracing::warn!(
+                                "Program generation failed for shape {:?}, with error: {:?}",
+                                shape,
+                                e
+                            );
+                            panic_tx.send(true).unwrap();
+                        }
+                    }
+                }
+            });
+        }
+
+        // Generate shapes and send them to the compiler workers.
+        all_maximal_shapes.into_iter().for_each(|program_shape| {
+            shape_tx
+                .send(ZKMCompressProgramShape::from_proof_shape(program_shape, height))
+                .unwrap();
+        });
+
+        drop(shape_tx);
+        drop(panic_tx);
+
+        // If the panic receiver has no panics, then the shape is correct.
+        panic_rx.iter().next().is_none()
+    });
+
+    compress_ok
+}
+
 pub fn build_vk_map<C: ZKMProverComponents>(
     reduce_batch_size: usize,
     dummy: bool,
@@ -66,7 +139,7 @@ pub fn build_vk_map<C: ZKMProverComponents>(
     prover.vk_verification = !dummy;
     let core_shape_config = prover.core_shape_config.as_ref().expect("core shape config not found");
     let recursion_shape_config =
-        prover.recursion_shape_config.as_ref().expect("recursion shape config not found");
+        prover.compress_shape_config.as_ref().expect("recursion shape config not found");
 
     tracing::info!("building compress vk map");
     let (vk_set, panic_indices, height) = if dummy {
@@ -111,7 +184,7 @@ pub fn build_vk_map<C: ZKMProverComponents>(
                     while let Ok((i, shape)) = shape_rx.lock().unwrap().recv() {
                         println!("shape {} is {:?}", i, shape);
                         let program = catch_unwind(AssertUnwindSafe(|| {
-                            prover.program_from_shape(shape.clone())
+                            prover.program_from_shape(shape.clone(), None)
                         }));
                         let is_shrink = matches!(shape, ZKMCompressProgramShape::Shrink(_));
                         match program {
@@ -160,10 +233,15 @@ pub fn build_vk_map<C: ZKMProverComponents>(
             }
 
             // Generate shapes and send them to the compiler workers.
-            all_shapes
+            let subset_shapes = all_shapes
                 .into_iter()
                 .enumerate()
                 .filter(|(i, _)| indices_set.as_ref().map(|set| set.contains(i)).unwrap_or(true))
+                .collect::<Vec<_>>();
+
+            subset_shapes
+                .clone()
+                .into_iter()
                 .map(|(i, shape)| (i, ZKMCompressProgramShape::from_proof_shape(shape, height)))
                 .for_each(|(i, program_shape)| {
                     shape_tx.send((i, program_shape)).unwrap();
@@ -177,6 +255,12 @@ pub fn build_vk_map<C: ZKMProverComponents>(
             let vk_set = vk_rx.iter().collect::<BTreeSet<_>>();
 
             let panic_indices = panic_rx.iter().collect::<Vec<_>>();
+
+            for (i, shape) in subset_shapes {
+                if panic_indices.contains(&i) {
+                    tracing::info!("panic shape {}: {:?}", i, shape);
+                }
+            }
 
             (vk_set, panic_indices, height)
         })
@@ -224,7 +308,7 @@ impl ZKMProofShape {
         reduce_batch_size: usize,
     ) -> impl Iterator<Item = Self> + 'a {
         core_shape_config
-            .generate_all_allowed_shapes()
+            .all_shapes()
             .map(Self::Recursion)
             .chain((1..=reduce_batch_size).flat_map(|batch_size| {
                 recursion_shape_config.get_all_shape_combinations(batch_size).map(Self::Compress)
@@ -244,10 +328,40 @@ impl ZKMProofShape {
     pub fn generate_compress_shapes(
         recursion_shape_config: &'_ RecursionShapeConfig<KoalaBear, CompressAir<KoalaBear>>,
         reduce_batch_size: usize,
-    ) -> impl Iterator<Item = Self> + '_ {
-        (1..=reduce_batch_size).flat_map(|batch_size| {
-            recursion_shape_config.get_all_shape_combinations(batch_size).map(Self::Compress)
-        })
+    ) -> impl Iterator<Item = Vec<OrderedShape>> + '_ {
+        recursion_shape_config.get_all_shape_combinations(reduce_batch_size)
+    }
+
+    pub fn generate_maximal_shapes<'a>(
+        core_shape_config: &'a CoreShapeConfig<KoalaBear>,
+        recursion_shape_config: &'a RecursionShapeConfig<KoalaBear, CompressAir<KoalaBear>>,
+        reduce_batch_size: usize,
+        no_precompiles: bool,
+    ) -> impl Iterator<Item = Self> + 'a {
+        let core_shape_iter = if no_precompiles {
+            core_shape_config.maximal_core_shapes(21).into_iter()
+        } else {
+            core_shape_config.maximal_core_plus_precompile_shapes(21).into_iter()
+        };
+        core_shape_iter
+            .map(|core_shape| {
+                Self::Recursion(OrderedShape {
+                    inner: core_shape.into_iter().map(|(k, v)| (k.to_string(), v)).collect(),
+                })
+            })
+            .chain((1..=reduce_batch_size).flat_map(|batch_size| {
+                recursion_shape_config.get_all_shape_combinations(batch_size).map(Self::Compress)
+            }))
+            .chain(
+                recursion_shape_config
+                    .get_all_shape_combinations(1)
+                    .map(|mut x| Self::Deferred(x.pop().unwrap())),
+            )
+            .chain(
+                recursion_shape_config
+                    .get_all_shape_combinations(1)
+                    .map(|mut x| Self::Shrink(x.pop().unwrap())),
+            )
     }
 
     pub fn dummy_vk_map<'a>(
@@ -285,6 +399,7 @@ impl<C: ZKMProverComponents> ZKMProver<C> {
     pub fn program_from_shape(
         &self,
         shape: ZKMCompressProgramShape,
+        shrink_shape: Option<RecursionShape>,
     ) -> Arc<RecursionProgram<KoalaBear>> {
         match shape {
             ZKMCompressProgramShape::Recursion(shape) => {
@@ -303,7 +418,10 @@ impl<C: ZKMProverComponents> ZKMProver<C> {
             ZKMCompressProgramShape::Shrink(shape) => {
                 let input =
                     ZKMCompressWithVKeyWitnessValues::dummy(self.compress_prover.machine(), &shape);
-                self.shrink_program(&input)
+                self.shrink_program(
+                    shrink_shape.unwrap_or_else(ShrinkAir::<KoalaBear>::shrink_shape),
+                    &input,
+                )
             }
         }
     }
