@@ -24,7 +24,7 @@ use crate::{
     CoreSC, InnerSC,
 };
 
-/// The information necessary to generate a proof for a given RISC-V program.
+/// The information necessary to generate a proof for a given MIPS program.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ZKMProvingKey {
     pub pk: StarkProvingKey<CoreSC>,
@@ -33,7 +33,7 @@ pub struct ZKMProvingKey {
     pub vk: ZKMVerifyingKey,
 }
 
-/// The information necessary to verify a proof for a given RISC-V program.
+/// The information necessary to verify a proof for a given MIPS program.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ZKMVerifyingKey {
     pub vk: StarkVerifyingKey<CoreSC>,
@@ -107,7 +107,7 @@ where
     }
 }
 
-/// A proof of a RISCV ELF execution with given inputs and outputs.
+/// A proof of a MIPS ELF execution with given inputs and outputs.
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(bound(serialize = "P: Serialize"))]
 #[serde(bound(deserialize = "P: DeserializeOwned"))]

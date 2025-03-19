@@ -32,7 +32,7 @@ pub fn try_build_plonk_bn254_artifacts_dev(
     template_proof: &ShardProof<OuterSC>,
 ) -> PathBuf {
     let build_dir = plonk_bn254_artifacts_dev_dir();
-    println!("[sp1] building plonk bn254 artifacts in development mode");
+    println!("[zkm2] building plonk bn254 artifacts in development mode");
     build_plonk_bn254_artifacts(template_vk, template_proof, &build_dir);
     build_dir
 }
@@ -149,7 +149,7 @@ pub fn build_constraints_and_witness(
 /// Generate a dummy proof that we can use to build the circuit. We need this to know the shape of
 /// the proof.
 pub fn dummy_proof() -> (StarkVerifyingKey<OuterSC>, ShardProof<OuterSC>) {
-    let elf = include_bytes!("../elf/riscv32im-succinct-zkvm-elf");
+    let elf = include_bytes!("../elf/mipsel-zkm-zkvm-elf");
 
     tracing::info!("initializing prover");
     let prover: ZKMProver = ZKMProver::new();
