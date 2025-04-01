@@ -218,7 +218,7 @@ impl Instruction {
             // } // SRL: rd = rt >> sa
             (0b000000, 0b000010) => {
                 if rs == 1 {
-                    Ok(Self::new(Opcode::ROR, rd, rt, sa, false, true))
+                    Ok(Self::new(Opcode::ROR, rd, rt, sa, false, true)) // ROTR
                 } else {
                     Ok(Self::new(Opcode::SRL, rd, rt, sa, false, true)) // SRL: rd = rt >> sa
                 }
@@ -240,7 +240,13 @@ impl Instruction {
             //     rt,
             //     rd,
             // )), // SRLV: rd = rt >> rs[4:0]
-            (0b000000, 0b000110) => Ok(Self::new(Opcode::SRL, rd, rt, rs, false, false)), // SRLV: rd = rt >> rs[4:0]
+            (0b000000, 0b000110) => {
+                if sa == 1 {
+                    Ok(Self::new(Opcode::ROR, rd, rt, rs, false, false)) // ROTRV
+                } else {
+                    Ok(Self::new(Opcode::SRL, rd, rt, rs, false, false)) // SRLV: rd = rt >> rs[4:0]
+                }
+            }
             // (0b000000, 0b000111) => Ok(Operation::BinaryArithmetic(
             //     BinaryOperator::SRAV,
             //     rs,
@@ -334,6 +340,8 @@ impl Instruction {
                         true,
                         true,
                     ))
+                } else if rt == 0x1f { //SYNCI
+                    Ok(Self::new(Opcode::ADD, 0, 0, 0, true, true))
                 } else {
                     Ok(Self::new_with_raw(Opcode::UNIMPL, 0, 0, insn, true, true, insn))
                 }
@@ -518,6 +526,9 @@ impl Instruction {
                 if sa == 0b010000 {
                     // Ok(Operation::Signext(rd, rt, 8)) // seb
                     Ok(Self::new(Opcode::SEXT, rd, rt, 0, false, true))
+                } else if sa == 0b110000 {
+                    // Ok(Operation::Signext(rd, rt, 16)) // seh
+                    Ok(Self::new(Opcode::SEXT, rd, rt, 1, false, true))
                 } else if sa == 0b000010 {
                     // Ok(Operation::SwapHalf(rd, rt)) // wsbh
                     Ok(Self::new(Opcode::WSBH, rd as u8, rt, 0, false, true))
