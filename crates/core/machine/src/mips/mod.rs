@@ -14,6 +14,7 @@ use hashbrown::{HashMap, HashSet};
 pub use mips_chips::*;
 use p3_field::PrimeField32;
 use strum_macros::{EnumDiscriminants, EnumIter};
+use zkm2_core_executor::events::PrecompileEvent;
 use zkm2_curves::weierstrass::{bls12_381::Bls12381BaseField, bn254::Bn254BaseField};
 use zkm2_stark::{
     air::{LookupScope, MachineAir, ZKM_PROOF_NUM_PV_ELTS},
@@ -38,7 +39,7 @@ pub(crate) mod mips_chips {
             instructions::SyscallInstrsChip,
             precompiles::{
                 edwards::{EdAddAssignChip, EdDecompressChip},
-                keccak256::KeccakPermuteChip,
+                keccak_sponge::KeccakSpongeChip,
                 sha256::{ShaCompressChip, ShaExtendChip},
                 u256x2048_mul::U256x2048MulChip,
                 uint256::Uint256MulChip,
@@ -136,8 +137,8 @@ pub enum MipsAir<F: PrimeField32> {
     Secp256r1Add(WeierstrassAddAssignChip<SwCurve<Secp256r1Parameters>>),
     /// A precompile for doubling a point on the Elliptic curve secp256r1.
     Secp256r1Double(WeierstrassDoubleAssignChip<SwCurve<Secp256r1Parameters>>),
-    /// A precompile for the Keccak permutation.
-    KeccakP(KeccakPermuteChip),
+    /// A precompile for the Keccak Sponge
+    KeccakSponge(KeccakSpongeChip),
     /// A precompile for addition on the Elliptic curve bn254.
     Bn254Add(WeierstrassAddAssignChip<SwCurve<Bn254Parameters>>),
     /// A precompile for doubling a point on the Elliptic curve bn254.
@@ -261,9 +262,9 @@ impl<F: PrimeField32> MipsAir<F> {
         costs.insert(secp256r1_double_assign.name(), secp256r1_double_assign.cost());
         chips.push(secp256r1_double_assign);
 
-        let keccak_permute = Chip::new(MipsAir::KeccakP(KeccakPermuteChip::new()));
-        costs.insert(keccak_permute.name(), 24 * keccak_permute.cost());
-        chips.push(keccak_permute);
+        let keccak_sponge = Chip::new(MipsAir::KeccakSponge(KeccakSpongeChip::new()));
+        costs.insert(keccak_sponge.name(),  24 * keccak_sponge.cost());
+        chips.push(keccak_sponge);
 
         let bn254_add_assign = Chip::new(MipsAir::Bn254Add(WeierstrassAddAssignChip::<
             SwCurve<Bn254Parameters>,
@@ -467,8 +468,20 @@ impl<F: PrimeField32> MipsAir<F> {
             .get_events(self.syscall_code())
             .filter(|events| !events.is_empty())
             .map(|events| {
+                let mut num_rows = events.len() * self.rows_per_event();
+                if self.syscall_code() == SyscallCode::KECCAK_SPONGE {
+                    num_rows = events.iter().map(|(_, pre_e)| {
+                        if let PrecompileEvent::KeccakSponge(event) = pre_e {
+                            event.num_blocks() * 24
+                        } else {
+                            unreachable!()
+                        }
+                    }).sum::<usize>();
+                }
+
+
                 (
-                    events.len() * self.rows_per_event(),
+                    num_rows,
                     events.get_local_mem_events().into_iter().count(),
                     record.global_lookup_events.len(),
                 )
@@ -556,7 +569,6 @@ impl<F: PrimeField32> MipsAir<F> {
         match self {
             Self::Sha256Compress(_) => 80,
             Self::Sha256Extend(_) => 48,
-            Self::KeccakP(_) => 24,
             _ => 1,
         }
     }
@@ -571,7 +583,6 @@ impl<F: PrimeField32> MipsAir<F> {
             Self::Bn254Fp2Mul(_) => SyscallCode::BN254_FP2_MUL,
             Self::Ed25519Add(_) => SyscallCode::ED_ADD,
             Self::Ed25519Decompress(_) => SyscallCode::ED_DECOMPRESS,
-            Self::KeccakP(_) => SyscallCode::KECCAK_PERMUTE,
             Self::Secp256k1Add(_) => SyscallCode::SECP256K1_ADD,
             Self::Secp256k1Double(_) => SyscallCode::SECP256K1_DOUBLE,
             Self::Secp256r1Add(_) => SyscallCode::SECP256R1_ADD,
@@ -587,6 +598,7 @@ impl<F: PrimeField32> MipsAir<F> {
             Self::Bls12381Fp(_) => SyscallCode::BLS12381_FP_ADD,
             Self::Bls12381Fp2Mul(_) => SyscallCode::BLS12381_FP2_MUL,
             Self::Bls12381Fp2AddSub(_) => SyscallCode::BLS12381_FP2_ADD,
+            Self::KeccakSponge(_) => SyscallCode::KECCAK_SPONGE,
             Self::Add(_) => unreachable!("Invalid for core chip"),
             Self::Bitwise(_) => unreachable!("Invalid for core chip"),
             Self::DivRem(_) => unreachable!("Invalid for core chip"),
