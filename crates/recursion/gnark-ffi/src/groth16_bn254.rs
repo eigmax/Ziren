@@ -104,6 +104,10 @@ impl Groth16Bn254Prover {
         let mut proof =
             prove_groth16_bn254(build_dir.to_str().unwrap(), witness_file.path().to_str().unwrap());
         proof.groth16_vkey_hash = Self::get_vkey_hash(&build_dir);
+
+        let (_, p) = witness_file.keep().unwrap();
+        log::info!("witness file keep path {:?}", p);
+
         proof
     }
 
