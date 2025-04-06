@@ -76,12 +76,15 @@ impl Prover<DefaultProverComponents> for CpuProver {
                 zkm2_version: self.version().to_string(),
             });
         }
-
+        
+        log::info!("generate compress proof {:?}", reduce_proof);
         // Generate the shrink proof.
         let compress_proof = self.prover.shrink(reduce_proof, opts.zkm2_prover_opts)?;
+        log::info!("generate shrink proof {:?}", compress_proof);
 
         // Genenerate the wrap proof.
         let outer_proof = self.prover.wrap_bn254(compress_proof, opts.zkm2_prover_opts)?;
+        log::info!("generate outer proof {:?}", outer_proof);
 
         if kind == ZKMProofKind::Plonk {
             let plonk_bn254_artifacts = if zkm2_prover::build::zkm2_dev_mode() {

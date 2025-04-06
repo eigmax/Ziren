@@ -100,13 +100,12 @@ impl Groth16Bn254Prover {
         let gnark_witness = GnarkWitness::new(witness);
         let serialized = serde_json::to_string(&gnark_witness).unwrap();
         witness_file.write_all(serialized.as_bytes()).unwrap();
+        let path = witness_file.path().to_str().unwrap();
+        log::info!("witness tmp file path {:?}", path);
 
         let mut proof =
-            prove_groth16_bn254(build_dir.to_str().unwrap(), witness_file.path().to_str().unwrap());
+            prove_groth16_bn254(build_dir.to_str().unwrap(), path);
         proof.groth16_vkey_hash = Self::get_vkey_hash(&build_dir);
-
-        let (_, p) = witness_file.keep().unwrap();
-        log::info!("witness file keep path {:?}", p);
 
         proof
     }
