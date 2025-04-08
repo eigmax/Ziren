@@ -5,8 +5,8 @@ edition = "2021"
 publish = false
 
 [dependencies]
-zkm2-zkvm = { path = "../../../crates/zkvm/entrypoint" }
-guest = { git = "https://github.com/zkMIPS/revme.git", package = "guest", branch = "cbor-zkm2" }
+zkm-zkvm = { path = "../../../crates/zkvm/entrypoint" }
+guest = { git = "https://github.com/zkMIPS/revme.git", package = "guest", branch = "zkMIPS" }
 
 k256 = { version = "0.13.3", features = ["ecdsa"], default-features = false }
 libc = { version = "0.2", features = ["extra_traits"] }

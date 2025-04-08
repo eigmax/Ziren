@@ -2,7 +2,7 @@ use rsa::{
     pkcs8::{DecodePrivateKey, DecodePublicKey},
     RsaPrivateKey, RsaPublicKey,
 };
-use zkm2_sdk::{include_elf, utils, ProverClient, ZKMProofWithPublicValues, ZKMStdin};
+use zkm_sdk::{include_elf, utils, ProverClient, ZKMProofWithPublicValues, ZKMStdin};
 use std::vec;
 
 /// The ELF we want to execute inside the zkVM.
@@ -54,6 +54,11 @@ fn main() {
     // Generate the proof for the given program and input.
     let client = ProverClient::new();
     let (pk, vk) = client.setup(RSA_ELF);
+
+    // Execute the guest using the `ProverClient.execute` method, without generating a proof.
+    let (_, report) = client.execute(RSA_ELF, stdin.clone()).run().unwrap();
+    println!("executed program with {} cycles", report.total_instruction_count());
+
     let proof = client.prove(&pk, stdin).run().expect("proving failed");
 
     // Verify proof.

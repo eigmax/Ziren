@@ -2,14 +2,14 @@ use std::iter::once;
 
 use p3_air::AirBuilderWithPublicValues;
 use p3_field::FieldAlgebra;
-use zkm2_stark::{
+use zkm_stark::{
     air::{AirLookup, BaseAirBuilder, LookupScope, MachineAirBuilder},
     LookupKind,
 };
 
 use crate::{air::Block, Address};
 
-/// A trait which contains all helper methods for building ZKM recursion machine AIRs.
+/// A trait which contains all helper methods for building zkMIPS recursion machine AIRs.
 pub trait ZKMRecursionAirBuilder: MachineAirBuilder + RecursionAirBuilder {}
 
 impl<AB: AirBuilderWithPublicValues + RecursionAirBuilder> ZKMRecursionAirBuilder for AB {}

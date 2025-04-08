@@ -1,15 +1,15 @@
-use zkm2_core_machine::mips::MipsAir;
-use zkm2_stark::{CpuProver, MachineProver, StarkGenericConfig};
+use zkm_core_machine::mips::MipsAir;
+use zkm_stark::{CpuProver, MachineProver, StarkGenericConfig};
 
 use crate::{CompressAir, CoreSC, InnerSC, OuterSC, ShrinkAir, WrapAir};
 
 pub trait ZKMProverComponents: Send + Sync {
-    /// The prover for making ZKM core proofs.
+    /// The prover for making zkMIPS core proofs.
     type CoreProver: MachineProver<CoreSC, MipsAir<<CoreSC as StarkGenericConfig>::Val>>
         + Send
         + Sync;
 
-    /// The prover for making ZKM recursive proofs.
+    /// The prover for making zkMIPS recursive proofs.
     type CompressProver: MachineProver<InnerSC, CompressAir<<InnerSC as StarkGenericConfig>::Val>>
         + Send
         + Sync;

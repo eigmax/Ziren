@@ -1,7 +1,7 @@
 use core::iter::{once, repeat};
 use p3_air::{AirBuilder, AirBuilderWithPublicValues};
 use p3_field::FieldAlgebra;
-use zkm2_stark::{
+use zkm_stark::{
     air::{AirLookup, BaseAirBuilder, LookupScope, MachineAirBuilder},
     LookupKind,
 };
@@ -11,7 +11,7 @@ use super::{
     RangeCheckOpcode,
 };
 
-/// A trait which contains all helper methods for building ZKM recursion machine AIRs.
+/// A trait which contains all helper methods for building zkMIPS recursion machine AIRs.
 pub trait ZKMRecursionAirBuilder:
     MachineAirBuilder + RecursionMemoryAirBuilder + RecursionLookupAirBuilder
 {

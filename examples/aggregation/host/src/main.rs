@@ -1,6 +1,6 @@
 //! A simple example showing how to aggregate proofs of multiple programs with ZKM.
 
-use zkm2_sdk::{
+use zkm_sdk::{
     include_elf, HashableKey, ProverClient, ZKMProof, ZKMProofWithPublicValues, ZKMStdin,
     ZKMVerifyingKey,
 };
@@ -21,7 +21,7 @@ struct AggregationInput {
 
 fn main() {
     // Setup the logger.
-    zkm2_sdk::utils::setup_logger();
+    zkm_sdk::utils::setup_logger();
 
     // Initialize the proving client.
     let client = ProverClient::new();
@@ -69,7 +69,7 @@ fn main() {
         // Write the proofs.
         //
         // Note: this data will not actually be read by the aggregation program, instead it will be
-        // witnessed by the prover during the recursive aggregation process inside ZKM itself.
+        // witnessed by the prover during the recursive aggregation process inside zkMIPS itself.
         for input in inputs {
             let ZKMProof::Compressed(proof) = input.proof.proof else { panic!() };
             stdin.write_proof(*proof, input.vk.vk);

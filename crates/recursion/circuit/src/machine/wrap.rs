@@ -5,8 +5,8 @@ use p3_commit::Mmcs;
 use p3_field::FieldAlgebra;
 use p3_koala_bear::KoalaBear;
 use p3_matrix::dense::RowMajorMatrix;
-use zkm2_recursion_compiler::ir::{Builder, Felt};
-use zkm2_stark::{air::MachineAir, StarkMachine};
+use zkm_recursion_compiler::ir::{Builder, Felt};
+use zkm_stark::{air::MachineAir, StarkMachine};
 
 use crate::{
     challenger::CanObserveVariable,
@@ -34,7 +34,7 @@ where
     /// Verify a batch of recursive proofs and aggregate their public values.
     ///
     /// The compression verifier can aggregate proofs of different kinds:
-    /// - Core proofs: proofs which are recursive proof of a batch of ZKM shard proofs. The
+    /// - Core proofs: proofs which are recursive proof of a batch of zkMIPS shard proofs. The
     ///   implementation in this function assumes a fixed recursive verifier specified by
     ///   `recursive_vk`.
     /// - Deferred proofs: proofs which are recursive proof of a batch of deferred proofs. The
@@ -42,7 +42,7 @@ where
     ///   `deferred_vk`.
     /// - Compress proofs: these are proofs which refer to a prove of this program. The key for it
     ///   is part of public values will be propagated across all levels of recursion and will be
-    ///   checked against itself as in [zkm2_prover::Prover] or as in [super::ZKMRootVerifier].
+    ///   checked against itself as in [zkm_prover::Prover] or as in [super::ZKMRootVerifier].
     pub fn verify(
         builder: &mut Builder<C>,
         machine: &StarkMachine<SC, A>,
