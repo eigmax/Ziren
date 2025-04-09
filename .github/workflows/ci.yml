@@ -51,6 +51,7 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
+      - run: cargo build --verbose --release
       - run: rustup component add clippy
       - run: cargo clippy --all-targets -- -D warnings
 
