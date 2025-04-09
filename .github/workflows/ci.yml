@@ -22,6 +22,8 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
+      - run: curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/zkMIPS/toolchain/refs/heads/main/setup.sh | sh
+      - run: source ~/.zkm-toolchain/env
       - name: Cargo build
         run: cargo build --verbose --release
       - name: Cargo test
@@ -51,9 +53,5 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
-      - run: curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/zkMIPS/toolchain/refs/heads/main/setup.sh | sh
-      - run: source ~/.zkm-toolchain/env
-      - run: cargo build --release
       - run: rustup component add clippy
       - run: cargo clippy --all-targets -- -D warnings
-
