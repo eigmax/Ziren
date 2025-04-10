@@ -1,0 +1,11 @@
+[package]
+name = "chess-host"
+version = { workspace = true }
+edition = { workspace = true }
+publish = false
+
+[dependencies]
+zkm-sdk = { workspace = true }
+
+[build-dependencies]
+zkm-build = { workspace = true }

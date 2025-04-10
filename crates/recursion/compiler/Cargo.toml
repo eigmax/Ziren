@@ -1,0 +1,40 @@
+[package]
+name = "zkm-recursion-compiler"
+description = "zkMIPS recursion compiler"
+readme = "../../../README.md"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+keywords = { workspace = true }
+categories = { workspace = true }
+
+[dependencies]
+p3-bn254-fr = { workspace = true }
+p3-koala-bear = { workspace = true }
+p3-field = { workspace = true }
+p3-symmetric = { workspace = true }
+
+zkm-recursion-core = { workspace = true }
+zkm-recursion-derive = { workspace = true }
+
+itertools = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+backtrace = "0.3.71"
+tracing = { workspace = true }
+vec_map = "0.8.2"
+
+zkm-stark = { workspace = true }
+zkm-core-machine = { workspace = true }
+zkm-primitives = { workspace = true }
+
+[dev-dependencies]
+p3-challenger = { workspace = true }
+p3-dft = { workspace = true }
+p3-merkle-tree = { workspace = true }
+rand = "0.8.5"
+criterion = { version = "0.5.1", features = ["html_reports"] }
+
+[features]
+default = ["debug"]
+debug = []

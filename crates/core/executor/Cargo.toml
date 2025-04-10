@@ -1,0 +1,60 @@
+[package]
+name = "zkm-core-executor"
+description = "zkMIPS executor"
+readme = "../../../README.md"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+keywords = { workspace = true }
+categories = { workspace = true }
+
+[dependencies]
+zkm-primitives = { workspace = true }
+zkm-curves = { workspace = true }
+zkm-stark = { workspace = true }
+
+rayon-scan = "0.1.1"
+
+# p3
+p3-field = { workspace = true }
+p3-maybe-rayon = { workspace = true, features = ["parallel"] }
+p3-koala-bear = { workspace = true }
+
+# misc
+serde = { workspace = true, features = ["derive", "rc"] }
+serde_json = { workspace = true }
+elf = "0.7.4"
+rrs_lib = { package = "rrs-succinct", version = "0.1.0" }
+eyre = "0.6.12"
+bincode = "1.3.3"
+hashbrown = { workspace = true, features = ["serde", "inline-more"] }
+itertools = { workspace = true }
+rand = "0.8.5"
+num = { version = "0.4.3" }
+typenum = "1.17.0"
+nohash-hasher = "0.2.0"
+thiserror = "1.0.63"
+tracing = { workspace = true }
+strum_macros = "0.26.4"
+strum = { version = "0.26.3", features = ["derive"] }
+log = "0.4.22"
+hex = "0.4.3"
+bytemuck = "1.16.3"
+tiny-keccak = { version = "2.0.2", features = ["keccak"] }
+vec_map = { version = "0.8.2", features = ["serde"] }
+enum-map = { version = "2.7.3", features = ["serde"] }
+sha2 = { workspace = true }
+anyhow = { workspace = true }
+test-artifacts = { workspace = true, optional = true }
+tracing-subscriber = "0.3.19"
+env_logger = "0.11.6"
+
+[dev-dependencies]
+zkm-zkvm = { workspace = true }
+zkm-lib = { workspace = true }
+
+[features]
+default = ["programs"]
+programs = ["dep:test-artifacts"]
+bigint-rug = ["zkm-curves/bigint-rug"]

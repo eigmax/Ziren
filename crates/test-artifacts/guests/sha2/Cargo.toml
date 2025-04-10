@@ -1,0 +1,11 @@
+[package]
+name = "sha2-test"
+version = "1.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+zkm-zkvm = { path = "../../../../crates/zkvm/entrypoint" }
+hex-literal = "0.4.1"
+sha2 = "0.10.8"
+hex = "0.4.3"

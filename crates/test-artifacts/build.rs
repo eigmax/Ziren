@@ -1,0 +1,20 @@
+use std::{
+    io::{Error, Result},
+    path::PathBuf,
+};
+
+use zkm_build::build_program_with_args;
+
+fn main() -> Result<()> {
+    let tests_path =
+        [env!("CARGO_MANIFEST_DIR"), "guests"].iter().collect::<PathBuf>().canonicalize()?;
+
+    build_program_with_args(
+        tests_path
+            .to_str()
+            .ok_or_else(|| Error::other(format!("expected {tests_path:?} to be valid UTF-8")))?,
+        Default::default(),
+    );
+
+    Ok(())
+}

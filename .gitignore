@@ -1,0 +1,15 @@
+target
+crates/test-artifacts/guests/target/
+crates/test-artifacts/guests/Cargo.lock
+.idea
+.vscode
+*.log
+bins
+
+# Proofs
+**/proof-with-pis.bin
+**/proof-with-io.bin
+proof-with-is-prime.bin
+**/program.bin
+**/stdin.bin
+
