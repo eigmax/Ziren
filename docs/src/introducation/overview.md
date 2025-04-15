@@ -1,27 +1,27 @@
 # Overview
 
-zkMIPS is an open-source, simple, stable, and universal zero-knowledge virtual machine on MIPS32r2 instruction set architecture(ISA).
+[zkMIPS](https://github.com/zkMIPS/zkMIPS) is an open-source, simple, stable, and universal zero-knowledge virtual machine on MIPS32r2 instruction set architecture(ISA).
 
 zkMIPS is the industry's first zero-knowledge proof virtual machine supporting the MIPS instruction set, developed by the ZKM team, enabling zero-knowledge proof generation for general-purpose computation. zkMIPS is fully open-source and comes equipped with a comprehensive developer toolkit and an efficient proof network. The Entangled Rollup protocol, built on zkMIPS, is a native asset cross-chain circulation protocol, with typical application cases including Metis Hybrid Rollup and GOAT Network.
 
 ## Architectural Workflow
 
 The workflow of zkMIPS is as follows:
-- Frontend Compilation:
+- Frontend Compilation
   
   Source code (Rust) → MIPS assembly → Optimized MIPS instructions for algebraic representation.
-- Constrained Execution:
+- Arithmetization
 
   Emulates MIPS instructions while generating execution traces with embedded constraints (ALU, memory consistency, range checks, etc.) and treating columns of execution traces as polynomials.
-- STARK Proof Generation:
+- STARK Proof Generation
 
   Compiles traces into Plonky3 AIR (Algebraic Intermediate Representation), and proves the constraints using the Fast Reed-Solomon Interactive Oracle Proof of Proximity (FRI) technique.
-- STARK Compression and STARK to SNARK:
+- STARK Compression and STARK-to-SNARK Proof Recursion
   
   To produce a constant-size proof, zkMIPS supports first generating a recursive argument to compress STARK proofs and then wrapping the compressed proof into a SNARK proof for efficient on-chain verification.
-- Verification:
+- Verification
   
-  On-chain verification of the SNARK proof.
+  For SNARK proof, it's available to do on-chain verification. And for the STARK proof, it's can used to verify on any verification layer for a faster optimistic finalization.
 
 ## Core Innovations
 
@@ -30,7 +30,7 @@ zkMIPS is the world first MIPS zkVM, and achieve the industry-leading performanc
 
 - zkMIPS Compiler
    
-  Implement the first zero-knowledge compiler for [MIPS32r2 instruction set](/mips-vm/mips-vm.md). Converts standard MIPS binaries into constraint systems with deterministic execution traces using proof-system-friendly compilation and PAIR builder.
+  Implement the first zero-knowledge compiler for [MIPS32r2](/mips-vm/mips-vm.md). Convert standard MIPS binaries into constraint systems with deterministic execution traces using proof-system-friendly compilation and PAIR builder.
 
 - "Area Minimization" Chip Design
 
@@ -38,19 +38,19 @@ zkMIPS is the world first MIPS zkVM, and achieve the industry-leading performanc
 
 - Multiset Hashing for Memory Consistency Checking
 
-  Replaces Merkle-Patricia trees with multiset hashing for memory consistency checks, significantly reducing witness data and enabling parallel verification.
+  Replaces MerkleTree hashing with [Multiset Hashing](/design/memory-checking.md) for memory consistency checks, significantly reducing witness data and enabling parallel verification.
  
 - KoalaBear Prime Field
 
-  Using KoalaBear Prime \\(2^{31} - 2^{24} + 1\\) instead of 64-bit Goldilock Prime, accelerating algebraic operations in proofs.
+  Using KoalaBear Prime \\(2^{31} - 2^{24} + 1\\) instead of 64-bit Goldilocks Prime, accelerating algebraic operations in proofs.
 
 - Hardware Acceleration
 
-  zkMIPS supports AVX2/512 and GPU acceleration.
+  zkMIPS supports AVX2/512 and GPU acceleration. The GPU prover can achieve 5x faster than CPU prover.
  
 - Integrating Cutting-edge Industry Advancements
 
-  zkMIPS constructs its zero-knowledge verification system by integrating [Plonky3](https://github.com/Plonky3/Plonky3)'s optimized Fast Reed-Solomon IOP (FRI) protocol and adapting [SP1](https://github.com/succinctlabs/sp1)'s circuit builder, recursion compiler, and precompiles for the MIPS architecture.
+  zkMIPS constructs its zero-knowledge proof system by integrating [Plonky3](https://github.com/Plonky3/Plonky3)'s optimized Fast Reed-Solomon IOP (FRI) protocol and adapting [SP1](https://github.com/succinctlabs/sp1)'s circuit builder, recursion compiler, and precompiles for the MIPS architecture.
 
 ## Target Use Cases
 zkMIPS enables universal verifiable computation via STARK proofs, including:
