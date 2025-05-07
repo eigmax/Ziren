@@ -1,19 +1,18 @@
-use core::fmt;
-use itertools::Itertools;
-use zkm_core_executor::{
-    events::PrecompileLocalMemory, syscalls::SyscallCode, ExecutionRecord, MipsAirId, Program,
-};
-
 use crate::{
     global::GlobalChip,
     memory::{MemoryChipType, MemoryLocalChip, NUM_LOCAL_MEMORY_ENTRIES_PER_ROW},
     syscall::precompiles::fptower::{Fp2AddSubAssignChip, Fp2MulAssignChip, FpOpChip},
 };
+use core::fmt;
 use hashbrown::{HashMap, HashSet};
+use itertools::Itertools;
 pub use mips_chips::*;
 use p3_field::PrimeField32;
 use strum_macros::{EnumDiscriminants, EnumIter};
 use zkm_core_executor::events::PrecompileEvent;
+use zkm_core_executor::{
+    events::PrecompileLocalMemory, syscalls::SyscallCode, ExecutionRecord, MipsAirId, Program,
+};
 use zkm_curves::weierstrass::{bls12_381::Bls12381BaseField, bn254::Bn254BaseField};
 use zkm_stark::{
     air::{LookupScope, MachineAir, ZKM_PROOF_NUM_PV_ELTS},
@@ -63,6 +62,8 @@ pub const MAX_LOG_NUMBER_OF_SHARDS: usize = 16;
 
 /// The maximum number of shards in core.
 pub const MAX_NUMBER_OF_SHARDS: usize = 1 << MAX_LOG_NUMBER_OF_SHARDS;
+
+const KECCAK_ROWS_PER_BLOCK: usize = 24;
 
 /// An AIR for encoding MIPS execution.
 ///
@@ -465,20 +466,7 @@ impl<F: PrimeField32> MipsAir<F> {
             .get_events(self.syscall_code())
             .filter(|events| !events.is_empty())
             .map(|events| {
-                let mut num_rows = events.len() * self.rows_per_event();
-                if self.syscall_code() == SyscallCode::KECCAK_SPONGE {
-                    num_rows = events
-                        .iter()
-                        .map(|(_, pre_e)| {
-                            if let PrecompileEvent::KeccakSponge(event) = pre_e {
-                                event.num_blocks() * 24
-                            } else {
-                                unreachable!()
-                            }
-                        })
-                        .sum::<usize>();
-                }
-
+                let num_rows = events.len() * self.rows_per_event(Some(record));
                 (
                     num_rows,
                     events.get_local_mem_events().into_iter().count(),
@@ -563,12 +551,55 @@ impl<F: PrimeField32> MipsAir<F> {
             .collect()
     }
 
-    pub(crate) fn rows_per_event(&self) -> usize {
+    pub(crate) fn rows_per_event(&self, record: Option<&ExecutionRecord>) -> usize {
         match self {
             Self::Sha256Compress(_) => 80,
             Self::Sha256Extend(_) => 48,
+            Self::KeccakSponge(_) => {
+                if let Some(record) = record {
+                    self.keccak_rows_per_event(record)
+                } else {
+                    0
+                }
+            }
             _ => 1,
         }
+    }
+
+    fn keccak_rows_per_event(&self, record: &ExecutionRecord) -> usize {
+        let all = self.keccak_rows_per_record(record);
+        if all == 0 {
+            return 0;
+        }
+
+        let count = record
+            .precompile_events
+            .get_events(SyscallCode::KECCAK_SPONGE)
+            .map(|events| events.len())
+            .unwrap_or(0);
+        if count > 0 {
+            return all.div_ceil(count);
+        }
+        0
+    }
+
+    fn keccak_rows_per_record(&self, record: &ExecutionRecord) -> usize {
+        record
+            .precompile_events
+            .get_events(SyscallCode::KECCAK_SPONGE)
+            .map(|events| {
+                events
+                    .iter()
+                    .map(|(_, pre_e)| {
+                        if let PrecompileEvent::KeccakSponge(event) = pre_e {
+                            event.num_blocks() * KECCAK_ROWS_PER_BLOCK
+                        } else {
+                            unreachable!()
+                        }
+                    })
+                    .sum::<usize>()
+            })
+            .unwrap_or(0)
     }
 
     pub(crate) fn syscall_code(&self) -> SyscallCode {

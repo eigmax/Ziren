@@ -16,15 +16,18 @@ use std::time::Duration;
 use anyhow::Result;
 use strum_macros::EnumString;
 use thiserror::Error;
+use zkm_core_executor::ExecutionReport;
 use zkm_core_executor::ZKMContext;
 use zkm_core_machine::{io::ZKMStdin, ZKM_CIRCUIT_VERSION};
+use zkm_primitives::io::ZKMPublicValues;
 use zkm_prover::{
-    components::ZKMProverComponents, CoreSC, InnerSC, ZKMCoreProofData, ZKMProver, ZKMProvingKey,
-    ZKMVerifyingKey,
+    components::{DefaultProverComponents, ZKMProverComponents},
+    CoreSC, InnerSC, ZKMCoreProofData, ZKMProver, ZKMProvingKey, ZKMVerifyingKey,
 };
 use zkm_stark::{air::PublicValues, MachineVerificationError, Word, ZKMProverOpts};
 
 use crate::install::try_install_circuit_artifacts;
+use crate::ProverClient;
 use crate::{ZKMProof, ZKMProofKind, ZKMProofWithPublicValues};
 
 /// The type of prover.
@@ -71,6 +74,12 @@ pub trait Prover<C: ZKMProverComponents>: Send + Sync {
         ZKM_CIRCUIT_VERSION
     }
 
+    /// Executes the program on the given input.
+    fn execute(&self, elf: &[u8], stdin: &ZKMStdin) -> Result<(ZKMPublicValues, ExecutionReport)> {
+        Ok(self.zkm_prover().execute(elf, stdin, ZKMContext::default())?)
+    }
+
+    /// Generate the proving and verifying keys for the given program.
     fn setup(&self, elf: &[u8]) -> (ZKMProvingKey, ZKMVerifyingKey);
 
     /// Prove the execution of a MIPS ELF with the given inputs, according to the given proof mode.
@@ -171,5 +180,38 @@ pub trait Prover<C: ZKMProverComponents>: Send + Sync {
                 )
                 .map_err(ZKMVerificationError::Groth16),
         }
+    }
+}
+
+impl Prover<DefaultProverComponents> for ProverClient {
+    fn id(&self) -> ProverType {
+        todo!()
+    }
+
+    fn zkm_prover(&self) -> &ZKMProver<DefaultProverComponents> {
+        self.prover.zkm_prover()
+    }
+
+    fn setup(&self, elf: &[u8]) -> (ZKMProvingKey, ZKMVerifyingKey) {
+        self.prover.setup(elf)
+    }
+
+    fn prove<'a>(
+        &'a self,
+        pk: &ZKMProvingKey,
+        stdin: ZKMStdin,
+        opts: ProofOpts,
+        context: ZKMContext<'a>,
+        kind: ZKMProofKind,
+    ) -> Result<ZKMProofWithPublicValues> {
+        self.prover.prove(pk, stdin, opts, context, kind)
+    }
+
+    fn verify(
+        &self,
+        bundle: &ZKMProofWithPublicValues,
+        vkey: &ZKMVerifyingKey,
+    ) -> Result<(), ZKMVerificationError> {
+        self.prover.verify(bundle, vkey)
     }
 }
