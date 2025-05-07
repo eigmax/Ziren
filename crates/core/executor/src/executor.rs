@@ -1164,6 +1164,7 @@ impl<'a> Executor<'a> {
 
                 self.rw(Register::V0, a, MemoryAccessPosition::A);
                 next_pc = precompile_next_pc;
+                next_next_pc = precompile_next_pc + 4;
                 self.state.clk += precompile_cycles;
                 exit_code = returned_exit_code;
             }
