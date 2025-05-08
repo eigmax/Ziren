@@ -165,9 +165,6 @@ pub struct Executor<'a> {
 
     /// The maximum LDE size to allow.
     pub lde_size_threshold: u64,
-
-    /// Indicate the next instruction is skipped.
-    pub skip_next: bool,
 }
 
 /// The different modes the executor can run in.
@@ -315,7 +312,6 @@ impl<'a> Executor<'a> {
             shape_check_frequency: 16,
             lde_size_check: false,
             lde_size_threshold: 0,
-            skip_next: false,
         }
     }
 
@@ -1090,10 +1086,6 @@ impl<'a> Executor<'a> {
             };
         }
 
-        self.skip_next = false;
-
-        // Delay slot is the instruction after a branch or jump instruction.
-        let mut next_is_delay_slot = false;
         match instruction.opcode {
             // syscall.
             Opcode::SYSCALL => {
@@ -1217,21 +1209,17 @@ impl<'a> Executor<'a> {
             | Opcode::BGTZ
             | Opcode::BLTZ => {
                 (a, b, c, next_next_pc) = self.execute_branch(instruction, next_pc, next_next_pc);
-                next_is_delay_slot = true;
             }
 
             // Jump instructions.
             Opcode::Jump => {
                 (a, b, c, next_next_pc) = self.execute_jump(instruction);
-                next_is_delay_slot = true;
             }
             Opcode::Jumpi => {
                 (a, b, c, next_next_pc) = self.execute_jumpi(instruction);
-                next_is_delay_slot = true;
             }
             Opcode::JumpDirect => {
                 (a, b, c, next_next_pc) = self.execute_jump_direct(instruction);
-                next_is_delay_slot = true;
             }
 
             // Misc instructions.
@@ -1289,13 +1277,6 @@ impl<'a> Executor<'a> {
         // Update the program counter.
         self.state.pc = next_pc;
         self.state.next_pc = next_next_pc;
-
-        // Skip the delay slot if it's nop instruction.
-        if next_is_delay_slot && instruction.raw == 0 {
-            self.state.pc = self.state.next_pc;
-            self.state.next_pc = self.state.next_pc.wrapping_add(4);
-            self.skip_next = true;
-        }
 
         // Update the clk to the next cycle.
         self.state.clk += 5;
@@ -1780,7 +1761,7 @@ impl<'a> Executor<'a> {
                 }
             }
 
-            if (cpu_exit || !shape_match_found) && !self.skip_next {
+            if cpu_exit || !shape_match_found {
                 self.state.current_shard += 1;
                 self.state.clk = 0;
                 self.bump_record();
