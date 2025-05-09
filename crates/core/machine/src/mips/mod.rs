@@ -168,7 +168,7 @@ pub enum MipsAir<F: PrimeField32> {
 }
 
 impl<F: PrimeField32> MipsAir<F> {
-    pub fn machine<SC: StarkGenericConfig<Val = F>>(config: SC) -> StarkMachine<SC, Self> {
+    pub fn machine<SC: StarkGenericConfig<Val=F>>(config: SC) -> StarkMachine<SC, Self> {
         let chips = Self::chips();
         StarkMachine::new(config, chips, ZKM_PROOF_NUM_PV_ELTS)
     }
@@ -690,10 +690,7 @@ pub mod tests {
     use p3_koala_bear::KoalaBear;
     use strum::IntoEnumIterator;
 
-    use crate::programs::{
-        fibonacci_program, hello_world_program, other_memory_program, sha3_chain_program,
-        simple_memory_program, simple_program, ssz_withdrawals_program,
-    };
+    use crate::programs::{fibonacci_program, hello_world_program, other_memory_program, sha3_chain_program, simple_memory_program, simple_program, ssz_withdrawals_program, unconstrained_program};
     use zkm_core_executor::{Instruction, MipsAirId, Opcode, Program};
     use zkm_stark::air::MachineAir;
     use zkm_stark::{
@@ -1092,7 +1089,7 @@ pub mod tests {
             ZKMCoreOpts::default(),
             None,
         )
-        .unwrap();
+            .unwrap();
     }
 
     #[test]

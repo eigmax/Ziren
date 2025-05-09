@@ -71,16 +71,6 @@ pub mod tests {
         Program::from(KECCAK_SPONGE_ELF).unwrap()
     }
 
-    /// Get the unconstrained program.
-    ///
-    /// # Panics
-    ///
-    /// This function will panic if the program fails to load.
-    #[must_use]
-    pub fn unconstrained_program() -> Program {
-        Program::from(UNCONSTRAINED_ELF).unwrap()
-    }
-
     /// Get the panic program.
     ///
     /// # Panics

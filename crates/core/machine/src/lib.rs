@@ -53,7 +53,7 @@ pub mod reduce {
 pub mod programs {
     use zkm_core_executor::{Instruction, Opcode, Program};
 
-    use test_artifacts::{FIBONACCI_ELF, HELLO_WORLD_ELF, KECCAK_SPONGE_ELF, SHA3_CHAIN_ELF};
+    use test_artifacts::{FIBONACCI_ELF, HELLO_WORLD_ELF, KECCAK_SPONGE_ELF, SHA3_CHAIN_ELF, UNCONSTRAINED_ELF};
 
     #[must_use]
     pub fn simple_program() -> Program {
@@ -103,6 +103,16 @@ pub mod programs {
     #[must_use]
     pub fn ssz_withdrawals_program() -> Program {
         Program::from(KECCAK_SPONGE_ELF).unwrap()
+    }
+
+    /// Get the unconstrained program.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the program fails to load.
+    #[must_use]
+    pub fn unconstrained_program() -> Program {
+        Program::from(UNCONSTRAINED_ELF).unwrap()
     }
 
     #[must_use]

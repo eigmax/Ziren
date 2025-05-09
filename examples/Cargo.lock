@@ -6965,13 +6965,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "test-artifacts"
-version = "1.0.0"
-dependencies = [
- "zkm-build",
-]
-
-[[package]]
 name = "thiserror"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8512,7 +8505,6 @@ dependencies = [
  "sha2 0.10.8",
  "strum",
  "strum_macros",
- "test-artifacts",
  "thiserror 1.0.69",
  "tiny-keccak",
  "tracing",
