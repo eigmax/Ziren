@@ -3,7 +3,7 @@ use std::borrow::Borrow;
 use p3_air::{Air, AirBuilder};
 use p3_field::FieldAlgebra;
 use p3_matrix::Matrix;
-use zkm_core_executor::{events::MemoryAccessPosition, syscalls::SyscallCode, Opcode};
+use zkm_core_executor::{syscalls::SyscallCode, Opcode};
 use zkm_stark::{
     air::{
         BaseAirBuilder, LookupScope, PublicValues, ZKMAirBuilder, POSEIDON_NUM_WORDS,
@@ -13,8 +13,7 @@ use zkm_stark::{
 };
 
 use crate::{
-    air::{MemoryAirBuilder, WordAirBuilder},
-    memory::MemoryCols,
+    air::WordAirBuilder,
     operations::{IsZeroOperation, KoalaBearWordRangeChecker},
 };
 
@@ -45,7 +44,6 @@ where
 
         // SAFETY: This checks the following.
         // - `shard`, `clk` are correctly received from the CpuChip
-        // - `op_a_0 = 0` enforced, as `op_a = X5` for all SYSCALL
         // - `op_a_immutable = 0`
         // - `is_memory = 0`
         // - `is_syscall = 1`
@@ -63,24 +61,16 @@ where
             local.next_pc,
             local.num_extra_cycles,
             Opcode::SYSCALL.as_field::<AB::F>(),
-            *local.op_a_access.value(),
+            local.op_a_value,
             local.op_b_value,
             local.op_c_value,
-            Word([AB::Expr::ZERO; 4]),
-            AB::Expr::ZERO, // op_a is always register 2 for syscall instructions.
+            local.prev_a_value,
             AB::Expr::ZERO,
             AB::Expr::ZERO,
             AB::Expr::ONE,
+            AB::Expr::ZERO,
             local.is_halt,
             is_sequential,
-            local.is_real,
-        );
-
-        builder.eval_memory_access(
-            local.shard,
-            local.clk + AB::F::from_canonical_u32(MemoryAccessPosition::A as u32),
-            AB::Expr::from_canonical_u32(2),
-            &local.op_a_access,
             local.is_real,
         );
 
@@ -118,7 +108,7 @@ impl SyscallInstrsChip {
         local: &SyscallInstrColumns<AB::Var>,
     ) {
         // The syscall code is the read-in value of op_a at the start of the instruction.
-        let syscall_code = local.op_a_access.prev_value();
+        let syscall_code = local.prev_a_value;
 
         // We interpret the syscall_code as little-endian bytes and interpret each byte as a u8
         // with different information.
@@ -169,13 +159,13 @@ impl SyscallInstrsChip {
         builder
             .when(local.is_real)
             .when(is_enter_unconstrained)
-            .assert_word_eq(*local.op_a_access.value(), zero_word);
+            .assert_word_eq(local.op_a_value, zero_word);
 
         // When the syscall is not one of ENTER_UNCONSTRAINED or HINT_LEN, op_a shouldn't change.
         builder
             .when(local.is_real)
             .when_not(is_enter_unconstrained + is_hint_len)
-            .assert_word_eq(*local.op_a_access.value(), *local.op_a_access.prev_value());
+            .assert_word_eq(local.op_a_value, local.prev_a_value);
 
         // SAFETY: This leaves the case where syscall is `HINT_LEN`.
         // In this case, `op_a`'s value can be arbitrary, but it still must be a valid word if `is_real = 1`.
@@ -309,7 +299,7 @@ impl SyscallInstrsChip {
         // `is_halt` is checked to be correct in `eval_is_halt_syscall`.
 
         // The syscall code is the read-in value of op_a at the start of the instruction.
-        let syscall_code = local.op_a_access.prev_value();
+        let syscall_code = local.prev_a_value;
 
         let syscall_id = syscall_code[0];
 
@@ -338,7 +328,7 @@ impl SyscallInstrsChip {
         local: &SyscallInstrColumns<AB::Var>,
     ) -> (AB::Expr, AB::Expr) {
         // The syscall code is the read-in value of op_a at the start of the instruction.
-        let syscall_code = local.op_a_access.prev_value();
+        let syscall_code = local.prev_a_value;
 
         let syscall_id = syscall_code[0];
 
@@ -376,12 +366,12 @@ impl SyscallInstrsChip {
         local: &SyscallInstrColumns<AB::Var>,
     ) -> AB::Expr {
         // The syscall code is the read-in value of op_a at the start of the instruction.
-        let syscall_code = local.op_a_access.prev_value();
+        let syscall_code = local.prev_a_value;
 
         let num_extra_cycles = syscall_code[2];
 
         // If `is_real = 0`, then the return value is `0` regardless of `num_extra_cycles`.
-        // If `is_real = 1`, then the `op_a_access` will be done, and `num_extra_cycles` will be correct.
+        // If `is_real = 1`, then `num_extra_cycles` will be correct.
         num_extra_cycles * local.is_real
     }
 }

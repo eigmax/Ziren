@@ -69,9 +69,6 @@ pub struct ShiftLeftCols<T> {
     pub pc: T,
     pub next_pc: T,
 
-    /// Whether the first operand is not register 0.
-    pub op_a_not_0: T,
-
     /// The output operand.
     pub a: Word<T>,
 
@@ -207,7 +204,6 @@ impl ShiftLeft {
         cols.a = Word(a.map(F::from_canonical_u8));
         cols.b = Word(b.map(F::from_canonical_u8));
         cols.c = Word(c.map(F::from_canonical_u8));
-        cols.op_a_not_0 = F::from_bool(!event.op_a_0);
         cols.is_real = F::ONE;
         for i in 0..BYTE_SIZE {
             cols.c_least_sig_byte[i] = F::from_canonical_u32((event.c >> i) & 1);
@@ -392,7 +388,7 @@ where
             local.b,
             local.c,
             Word([AB::Expr::ZERO; 4]),
-            AB::Expr::ONE - local.op_a_not_0,
+            AB::Expr::ZERO,
             AB::Expr::ZERO,
             AB::Expr::ZERO,
             AB::Expr::ZERO,
@@ -419,7 +415,7 @@ mod tests {
     #[test]
     fn generate_trace() {
         let mut shard = ExecutionRecord::default();
-        shard.shift_left_events = vec![AluEvent::new(0, Opcode::SLL, 16, 8, 1, false)];
+        shard.shift_left_events = vec![AluEvent::new(0, Opcode::SLL, 16, 8, 1)];
         let chip = ShiftLeft::default();
         let trace: RowMajorMatrix<KoalaBear> =
             chip.generate_trace(&shard, &mut ExecutionRecord::default());
@@ -454,12 +450,12 @@ mod tests {
             (Opcode::SLL, 0x00000000, 0x21212120, 0xffffffff),
         ];
         for t in shift_instructions.iter() {
-            shift_events.push(AluEvent::new(0, t.0, t.1, t.2, t.3, false));
+            shift_events.push(AluEvent::new(0, t.0, t.1, t.2, t.3));
         }
 
         // Append more events until we have 1000 tests.
         for _ in 0..(1000 - shift_instructions.len()) {
-            shift_events.push(AluEvent::new(0, Opcode::SLL, 1, 1, 0, false));
+            shift_events.push(AluEvent::new(0, Opcode::SLL, 1, 1, 0));
         }
 
         let mut shard = ExecutionRecord::default();

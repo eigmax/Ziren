@@ -45,9 +45,6 @@ pub struct BitwiseCols<T> {
     /// The second input operand.
     pub c: Word<T>,
 
-    /// Whether the first operand is not register 0.
-    pub op_a_not_0: T,
-
     /// If the opcode is NOR.
     pub is_nor: T,
 
@@ -148,7 +145,6 @@ impl BitwiseChip {
         cols.a = Word::from(event.a);
         cols.b = Word::from(event.b);
         cols.c = Word::from(event.c);
-        cols.op_a_not_0 = F::from_bool(!event.op_a_0);
 
         cols.is_nor = F::from_bool(event.opcode == Opcode::NOR);
         cols.is_xor = F::from_bool(event.opcode == Opcode::XOR);
@@ -213,7 +209,7 @@ where
             local.b,
             local.c,
             Word([AB::Expr::ZERO; 4]),
-            AB::Expr::ONE - local.op_a_not_0,
+            AB::Expr::ZERO,
             AB::Expr::ZERO,
             AB::Expr::ZERO,
             AB::Expr::ZERO,
@@ -248,10 +244,10 @@ mod tests {
     fn generate_trace() {
         let mut shard = ExecutionRecord::default();
         shard.bitwise_events = vec![
-            AluEvent::new(0, Opcode::XOR, 25, 10, 19, false),
-            AluEvent::new(0, Opcode::OR, 27, 10, 19, false),
-            AluEvent::new(0, Opcode::AND, 2, 10, 19, false),
-            AluEvent::new(0, Opcode::NOR, 228, 10, 19, false),
+            AluEvent::new(0, Opcode::XOR, 25, 10, 19),
+            AluEvent::new(0, Opcode::OR, 27, 10, 19),
+            AluEvent::new(0, Opcode::AND, 2, 10, 19),
+            AluEvent::new(0, Opcode::NOR, 228, 10, 19),
         ];
         let chip = BitwiseChip::default();
         let trace: RowMajorMatrix<KoalaBear> =
@@ -266,10 +262,10 @@ mod tests {
 
         let mut shard = ExecutionRecord::default();
         shard.bitwise_events = [
-            AluEvent::new(0, Opcode::XOR, 25, 10, 19, false),
-            AluEvent::new(0, Opcode::OR, 27, 10, 19, false),
-            AluEvent::new(0, Opcode::AND, 2, 10, 19, false),
-            AluEvent::new(0, Opcode::NOR, 228, 10, 19, false),
+            AluEvent::new(0, Opcode::XOR, 25, 10, 19),
+            AluEvent::new(0, Opcode::OR, 27, 10, 19),
+            AluEvent::new(0, Opcode::AND, 2, 10, 19),
+            AluEvent::new(0, Opcode::NOR, 228, 10, 19),
         ]
         .repeat(1000);
         let chip = BitwiseChip::default();

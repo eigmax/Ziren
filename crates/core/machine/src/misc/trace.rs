@@ -6,7 +6,7 @@ use p3_field::PrimeField32;
 use p3_matrix::dense::RowMajorMatrix;
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use zkm_core_executor::{
-    events::{ByteLookupEvent, ByteRecord, MiscEvent},
+    events::{ByteLookupEvent, ByteRecord, MemoryRecordEnum, MiscEvent},
     ByteOpcode, ExecutionRecord, Opcode, Program,
 };
 use zkm_stark::{air::MachineAir, Word};
@@ -85,8 +85,9 @@ impl MiscInstrsChip {
         cols.op_a_value = event.a.into();
         cols.op_b_value = event.b.into();
         cols.op_c_value = event.c.into();
-        cols.op_hi_value = event.hi.into();
-        cols.op_a_0 = F::from_bool(event.op_a_0);
+        cols.prev_a_value = event.prev_a.into();
+        cols.shard = F::from_canonical_u32(event.shard);
+        cols.clk = F::from_canonical_u32(event.clk);
 
         cols.is_wsbh = F::from_bool(matches!(event.opcode, Opcode::WSBH));
         cols.is_sext = F::from_bool(matches!(event.opcode, Opcode::SEXT));
@@ -146,7 +147,6 @@ impl MiscInstrsChip {
         let movcond_cols = cols.misc_specific_columns.movcond_mut();
         movcond_cols.a_eq_b = F::from_bool(event.b == event.a);
         movcond_cols.c_eq_0 = F::from_bool(event.c == 0);
-        movcond_cols.prev_a_value = Word::from(event.a_record.prev_value);
     }
 
     fn populate_maddsub<F: PrimeField32>(
@@ -166,10 +166,8 @@ impl MiscInstrsChip {
         maddsub_cols.mul_lo = Word::from(mul_lo);
 
         let is_add = event.opcode == Opcode::MADDU;
-        let src2_lo = if is_add { event.a_record.prev_value } else { event.a_record.value };
+        let src2_lo = if is_add { event.prev_a } else { event.a };
         let src2_hi = if is_add { event.hi_record.prev_value } else { event.hi_record.value };
-        maddsub_cols.prev_hi = Word::from(event.hi_record.prev_value);
-        maddsub_cols.prev_lo = Word::from(event.a_record.prev_value);
         let _ = maddsub_cols.add_operation.populate(
             blu,
             multiply,
@@ -177,6 +175,11 @@ impl MiscInstrsChip {
         );
         maddsub_cols.src2_lo = Word::from(src2_lo);
         maddsub_cols.src2_hi = Word::from(src2_hi);
+
+        // For maddu/msubu instructions, pass in a dummy byte lookup vector.
+        // This maddu/msubu instruction chip also has a op_hi_access field that will be
+        // populated and that will contribute to the byte lookup dependencies.
+        maddsub_cols.op_hi_access.populate(MemoryRecordEnum::Write(event.hi_record), blu);
     }
 
     fn populate_ext<F: PrimeField32>(
@@ -209,8 +212,7 @@ impl MiscInstrsChip {
         let ins_cols = cols.misc_specific_columns.ins_mut();
         let lsb = event.c & 0x1f;
         let msb = event.c >> 5;
-        ins_cols.prev_a_value = Word::from(event.a_record.prev_value);
-        let ror_val = event.a_record.prev_value.rotate_right(lsb);
+        let ror_val = event.prev_a.rotate_right(lsb);
         let srl_val = ror_val >> (msb - lsb + 1);
         let sll_val = event.b << (31 - msb + lsb);
         let add_val = srl_val + sll_val;

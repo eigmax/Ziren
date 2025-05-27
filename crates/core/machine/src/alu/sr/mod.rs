@@ -89,9 +89,6 @@ pub struct ShiftRightCols<T> {
     pub pc: T,
     pub next_pc: T,
 
-    /// Whether the first operand is not register 0.
-    pub op_a_not_0: T,
-
     /// The output operand.
     pub a: Word<T>,
 
@@ -225,7 +222,6 @@ impl ShiftRightChip {
             cols.a = Word::from(event.a);
             cols.b = Word::from(event.b);
             cols.c = Word::from(event.c);
-            cols.op_a_not_0 = F::from_bool(!event.op_a_0);
 
             cols.b_msb = F::from_canonical_u32((event.b >> 31) & 1);
 
@@ -521,7 +517,7 @@ where
             local.b,
             local.c,
             Word([AB::Expr::ZERO; 4]),
-            AB::Expr::ONE - local.op_a_not_0,
+            AB::Expr::ZERO,
             AB::Expr::ZERO,
             AB::Expr::ZERO,
             AB::Expr::ZERO,
@@ -547,7 +543,7 @@ mod tests {
     #[test]
     fn generate_trace() {
         let mut shard = ExecutionRecord::default();
-        shard.shift_right_events = vec![AluEvent::new(0, Opcode::SRL, 6, 12, 1, false)];
+        shard.shift_right_events = vec![AluEvent::new(0, Opcode::SRL, 6, 12, 1)];
         let chip = ShiftRightChip::default();
         let trace: RowMajorMatrix<KoalaBear> =
             chip.generate_trace(&shard, &mut ExecutionRecord::default());
@@ -598,7 +594,7 @@ mod tests {
         ];
         let mut shift_events: Vec<AluEvent> = Vec::new();
         for t in shifts.iter() {
-            shift_events.push(AluEvent::new(0, t.0, t.1, t.2, t.3, false));
+            shift_events.push(AluEvent::new(0, t.0, t.1, t.2, t.3));
         }
         let mut shard = ExecutionRecord::default();
         shard.shift_right_events = shift_events;

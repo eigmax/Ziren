@@ -49,9 +49,6 @@ pub struct CloClzCols<T> {
     /// The result
     pub a: Word<T>,
 
-    /// Whether the first operand is not register 0.
-    pub op_a_not_0: T,
-
     /// The input operand.
     pub b: Word<T>,
 
@@ -104,7 +101,6 @@ impl<F: PrimeField32> MachineAir<F> for CloClzChip {
             cols.is_real = F::ONE;
             cols.is_clo = F::from_bool(event.opcode == Opcode::CLO);
             cols.is_clz = F::from_bool(event.opcode == Opcode::CLZ);
-            cols.op_a_not_0 = F::from_bool(!event.op_a_0);
 
             let bb = if event.opcode == Opcode::CLZ { event.b } else { 0xffffffff - event.b };
             cols.bb = Word::from(bb);
@@ -222,7 +218,7 @@ where
             local.b,
             Word([AB::Expr::ZERO; 4]),
             Word([AB::Expr::ZERO; 4]),
-            AB::Expr::ONE - local.op_a_not_0,
+            AB::Expr::ZERO,
             AB::Expr::ZERO,
             AB::Expr::ZERO,
             AB::Expr::ZERO,
@@ -283,12 +279,12 @@ mod tests {
     fn generate_trace() {
         let mut shard = ExecutionRecord::default();
         shard.cloclz_events = vec![
-            AluEvent::new(0, Opcode::CLZ, 32, 0, 0, false),
-            AluEvent::new(0, Opcode::CLZ, 8, 0x00800000, 0, false),
-            AluEvent::new(0, Opcode::CLZ, 0, 0xffffffff, 0, false),
-            AluEvent::new(0, Opcode::CLO, 32, 0xffffffff, 0, false),
-            AluEvent::new(0, Opcode::CLO, 8, 0xff7fffff, 0, false),
-            AluEvent::new(0, Opcode::CLO, 0, 0, 0, false),
+            AluEvent::new(0, Opcode::CLZ, 32, 0, 0),
+            AluEvent::new(0, Opcode::CLZ, 8, 0x00800000, 0),
+            AluEvent::new(0, Opcode::CLZ, 0, 0xffffffff, 0),
+            AluEvent::new(0, Opcode::CLO, 32, 0xffffffff, 0),
+            AluEvent::new(0, Opcode::CLO, 8, 0xff7fffff, 0),
+            AluEvent::new(0, Opcode::CLO, 0, 0, 0),
         ];
         let chip = CloClzChip::default();
         let trace: RowMajorMatrix<KoalaBear> =
@@ -312,12 +308,12 @@ mod tests {
             (Opcode::CLO, 0, 0, 0),
         ];
         for t in clo_clzs.iter() {
-            cloclz_events.push(AluEvent::new(0, t.0, t.1, t.2, t.3, false));
+            cloclz_events.push(AluEvent::new(0, t.0, t.1, t.2, t.3));
         }
 
         // Append more events until we have 1000 tests.
         for _ in 0..(1000 - clo_clzs.len()) {
-            cloclz_events.push(AluEvent::new(0, Opcode::CLZ, 32, 0, 0, false));
+            cloclz_events.push(AluEvent::new(0, Opcode::CLZ, 32, 0, 0));
         }
 
         let mut shard = ExecutionRecord::default();

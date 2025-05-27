@@ -99,6 +99,19 @@ impl Instruction {
         self.opcode == Opcode::SYSCALL
     }
 
+    #[must_use]
+    pub fn is_rw_a_instruction(&self) -> bool {
+        matches!(
+            self.opcode,
+            Opcode::SYSCALL
+                | Opcode::INS
+                | Opcode::MADDU
+                | Opcode::MSUBU
+                | Opcode::MEQ
+                | Opcode::MNE
+        )
+    }
+
     /// Returns if the instruction is a memory instruction.
     #[must_use]
     pub const fn is_memory_instruction(&self) -> bool {
@@ -158,15 +171,7 @@ impl Instruction {
     /// Returns if the instruction is a mult/div instruction.
     #[must_use]
     pub fn is_mult_div_instruction(&self) -> bool {
-        matches!(
-            self.opcode,
-            Opcode::MULT
-                | Opcode::MULTU
-                | Opcode::DIV
-                | Opcode::DIVU
-                | Opcode::MADDU
-                | Opcode::MSUBU
-        )
+        matches!(self.opcode, Opcode::MULT | Opcode::MULTU | Opcode::DIV | Opcode::DIVU)
     }
 
     /// Returns if the instruction is a jump instruction.

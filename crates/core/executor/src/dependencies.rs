@@ -1,8 +1,12 @@
 use crate::{
-    events::{AluEvent, BranchEvent, JumpEvent, MemInstrEvent, MemoryRecord, MiscEvent},
+    events::{
+        AluEvent, BranchEvent, CompAluEvent, JumpEvent, MemInstrEvent, MemoryRecord,
+        MemoryWriteRecord, MiscEvent,
+    },
     utils::{get_msb, get_quotient_and_remainder, is_signed_operation},
     Executor, Opcode, DEFAULT_PC_INC, UNUSED_PC,
 };
+
 /// Emits the dependencies for division and remainder operations.
 #[allow(clippy::too_many_lines)]
 pub fn emit_divrem_dependencies(executor: &mut Executor, event: AluEvent) {
@@ -26,7 +30,6 @@ pub fn emit_divrem_dependencies(executor: &mut Executor, event: AluEvent) {
             a: 0,
             b: event.c,
             c: (event.c as i32).unsigned_abs(),
-            op_a_0: false,
         });
     }
     if rem_neg == 1 {
@@ -38,7 +41,6 @@ pub fn emit_divrem_dependencies(executor: &mut Executor, event: AluEvent) {
             a: 0,
             b: remainder,
             c: (remainder as i32).unsigned_abs(),
-            op_a_0: false,
         });
     }
 
@@ -52,7 +54,9 @@ pub fn emit_divrem_dependencies(executor: &mut Executor, event: AluEvent) {
     let lower_word = u32::from_le_bytes(c_times_quotient[0..4].try_into().unwrap());
     let upper_word = u32::from_le_bytes(c_times_quotient[4..8].try_into().unwrap());
 
-    let multiplication = AluEvent {
+    let multiplication = CompAluEvent {
+        clk: 0,
+        shard: 0,
         pc: UNUSED_PC,
         next_pc: UNUSED_PC + DEFAULT_PC_INC,
         opcode: {
@@ -66,7 +70,8 @@ pub fn emit_divrem_dependencies(executor: &mut Executor, event: AluEvent) {
         c: event.c,
         b: quotient,
         hi: upper_word,
-        op_a_0: false,
+        hi_record_is_real: false,
+        hi_record: MemoryWriteRecord::default(),
     };
     executor.record.mul_events.push(multiplication);
 
@@ -79,7 +84,6 @@ pub fn emit_divrem_dependencies(executor: &mut Executor, event: AluEvent) {
             a: 1,
             b: (remainder as i32).unsigned_abs(),
             c: u32::max(1, (event.c as i32).unsigned_abs()),
-            op_a_0: false,
         }
     } else {
         AluEvent {
@@ -90,7 +94,6 @@ pub fn emit_divrem_dependencies(executor: &mut Executor, event: AluEvent) {
             a: 1,
             b: remainder,
             c: u32::max(1, event.c),
-            op_a_0: false,
         }
     };
 
@@ -112,7 +115,6 @@ pub fn emit_cloclz_dependencies(executor: &mut Executor, event: AluEvent) {
             a: b >> (31 - event.a),
             b,
             c: 31 - event.a,
-            op_a_0: false,
         };
 
         executor.record.shift_right_events.push(srl_event);
@@ -135,7 +137,6 @@ pub fn emit_memory_dependencies(
         a: memory_addr,
         b: event.b,
         c: event.c,
-        op_a_0: false,
     };
     executor.record.add_events.push(add_event);
     let addr_offset = (memory_addr % 4_u32) as u8;
@@ -170,7 +171,6 @@ pub fn emit_memory_dependencies(
                 a: event.a,
                 b: unsigned_mem_val,
                 c: sign_value,
-                op_a_0: false,
             };
             executor.record.add_events.push(sub_event);
         }
@@ -191,7 +191,6 @@ pub fn emit_branch_dependencies(executor: &mut Executor, event: BranchEvent) {
         a: a_lt_b as u32,
         b: event.a,
         c: event.b,
-        op_a_0: false,
     };
     let gt_comp_event = AluEvent {
         pc: UNUSED_PC,
@@ -201,7 +200,6 @@ pub fn emit_branch_dependencies(executor: &mut Executor, event: BranchEvent) {
         a: a_gt_b as u32,
         b: event.b,
         c: event.a,
-        op_a_0: false,
     };
     executor.record.lt_events.push(lt_comp_event);
     executor.record.lt_events.push(gt_comp_event);
@@ -223,7 +221,6 @@ pub fn emit_branch_dependencies(executor: &mut Executor, event: BranchEvent) {
             a: event.next_next_pc,
             b: event.next_pc,
             c: event.c,
-            op_a_0: false,
         };
         executor.record.add_events.push(add_event);
     }
@@ -242,7 +239,6 @@ pub fn emit_jump_dependencies(executor: &mut Executor, event: JumpEvent) {
                 a: target_pc,
                 b: event.next_pc,
                 c: event.b,
-                op_a_0: false,
             };
             executor.record.add_events.push(add_event);
         }
@@ -257,7 +253,9 @@ pub fn emit_misc_dependencies(executor: &mut Executor, event: MiscEvent) {
         let multiply = event.b as u64 * event.c as u64;
         let mul_hi = (multiply >> 32) as u32;
         let mul_lo = multiply as u32;
-        let mul_event = AluEvent {
+        let mul_event = CompAluEvent {
+            clk: 0,
+            shard: 0,
             pc: UNUSED_PC,
             next_pc: UNUSED_PC + DEFAULT_PC_INC,
             opcode: Opcode::MULTU,
@@ -265,7 +263,8 @@ pub fn emit_misc_dependencies(executor: &mut Executor, event: MiscEvent) {
             a: mul_lo,
             b: event.b,
             c: event.c,
-            op_a_0: false,
+            hi_record_is_real: false,
+            hi_record: MemoryWriteRecord::default(),
         };
         executor.record.add_mul_event(mul_event);
     } else if matches!(event.opcode, Opcode::EXT) {
@@ -280,7 +279,6 @@ pub fn emit_misc_dependencies(executor: &mut Executor, event: MiscEvent) {
             a: sll_val,
             b: event.b,
             c: 31 - lsb - msbd,
-            op_a_0: false,
         };
         executor.record.shift_left_events.push(sll_event);
         let srl_event = AluEvent {
@@ -291,23 +289,21 @@ pub fn emit_misc_dependencies(executor: &mut Executor, event: MiscEvent) {
             a: event.a,
             b: sll_val,
             c: 31 - msbd,
-            op_a_0: false,
         };
         assert_eq!(event.a, sll_val >> (31 - msbd));
         executor.record.shift_right_events.push(srl_event);
     } else if matches!(event.opcode, Opcode::INS) {
         let lsb = event.c & 0x1f;
         let msb = event.c >> 5;
-        let ror_val = event.a_record.prev_value.rotate_right(lsb);
+        let ror_val = event.prev_a.rotate_right(lsb);
         let ror_event = AluEvent {
             pc: UNUSED_PC,
             next_pc: UNUSED_PC + DEFAULT_PC_INC,
             opcode: Opcode::ROR,
             hi: 0,
             a: ror_val,
-            b: event.a_record.prev_value,
+            b: event.prev_a,
             c: lsb,
-            op_a_0: false,
         };
         executor.record.shift_right_events.push(ror_event);
 
@@ -320,7 +316,6 @@ pub fn emit_misc_dependencies(executor: &mut Executor, event: MiscEvent) {
             a: srl_val,
             b: ror_val,
             c: msb - lsb + 1,
-            op_a_0: false,
         };
         executor.record.shift_right_events.push(srl_event);
 
@@ -333,7 +328,6 @@ pub fn emit_misc_dependencies(executor: &mut Executor, event: MiscEvent) {
             a: sll_val,
             b: event.b,
             c: 31 - msb + lsb,
-            op_a_0: false,
         };
         executor.record.shift_left_events.push(sll_event);
 
@@ -346,7 +340,6 @@ pub fn emit_misc_dependencies(executor: &mut Executor, event: MiscEvent) {
             a: extra_shift,
             b: srl_val,
             c: sll_val,
-            op_a_0: false,
         };
         executor.record.add_events.push(add_event);
 
@@ -358,7 +351,6 @@ pub fn emit_misc_dependencies(executor: &mut Executor, event: MiscEvent) {
             a: event.a,
             b: extra_shift,
             c: 31 - msb,
-            op_a_0: false,
         };
         assert_eq!(event.a, extra_shift.rotate_right(31 - msb));
         executor.record.shift_right_events.push(ror_event2);
