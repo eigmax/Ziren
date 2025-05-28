@@ -61,7 +61,7 @@ where
     OpeningProof<SC>: Send + Sync,
     Com<SC>: Send + Sync,
     PcsProverData<SC>: Send + Sync,
-    // ShardMainData<SC>: Serialize + DeserializeOwned,
+// ShardMainData<SC>: Serialize + DeserializeOwned,
     <SC as StarkGenericConfig>::Val: PrimeField32,
 {
     // Setup the machine.
@@ -240,11 +240,14 @@ where
                         let received = { checkpoints_rx.lock().unwrap().recv() };
                         if let Ok((index, mut checkpoint, done)) = received {
                             // Trace the checkpoint and reconstruct the execution records.
+                            let mut reader = io::BufReader::new(&checkpoint);
+                            let execution_state: ExecutionState =
+                                bincode::deserialize_from(&mut reader).expect("failed to deserialize state");
                             let (mut records, report) = tracing::debug_span!("trace checkpoint")
                                 .in_scope(|| {
                                     trace_checkpoint::<SC>(
                                         program.clone(),
-                                        &checkpoint,
+                                        execution_state,
                                         opts,
                                         shape_config,
                                     )
@@ -523,7 +526,7 @@ pub fn run_test_core<P: MachineProver<KoalaBearPoseidon2, MipsAir<KoalaBear>>>(
         ZKMContext::default(),
         shape_config,
     )
-    .unwrap();
+        .unwrap();
 
     let config = KoalaBearPoseidon2::new();
     let machine = MipsAir::machine(config);
@@ -543,11 +546,11 @@ pub fn run_test_machine_with_prover<SC, A, P: MachineProver<SC, A>>(
 ) -> Result<MachineProof<SC>, MachineVerificationError<SC>>
 where
     A: MachineAir<SC::Val>
-        + Air<LookupBuilder<Val<SC>>>
-        + for<'a> Air<VerifierConstraintFolder<'a, SC>>
-        + for<'a> Air<DebugConstraintBuilder<'a, Val<SC>, SC::Challenge>>
-        + Air<SymbolicAirBuilder<SC::Val>>,
-    A::Record: MachineRecord<Config = ZKMCoreOpts>,
+    + Air<LookupBuilder<Val<SC>>>
+    + for<'a> Air<VerifierConstraintFolder<'a, SC>>
+    + for<'a> Air<DebugConstraintBuilder<'a, Val<SC>, SC::Challenge>>
+    + Air<SymbolicAirBuilder<SC::Val>>,
+    A::Record: MachineRecord<Config=ZKMCoreOpts>,
     SC: StarkGenericConfig,
     SC::Val: p3_field::PrimeField32,
     SC::Challenger: Clone,
@@ -584,12 +587,12 @@ pub fn run_test_machine<SC, A>(
 ) -> Result<MachineProof<SC>, MachineVerificationError<SC>>
 where
     A: MachineAir<SC::Val>
-        + for<'a> Air<ProverConstraintFolder<'a, SC>>
-        + Air<LookupBuilder<Val<SC>>>
-        + for<'a> Air<VerifierConstraintFolder<'a, SC>>
-        + for<'a> Air<DebugConstraintBuilder<'a, Val<SC>, SC::Challenge>>
-        + Air<SymbolicAirBuilder<SC::Val>>,
-    A::Record: MachineRecord<Config = ZKMCoreOpts>,
+    + for<'a> Air<ProverConstraintFolder<'a, SC>>
+    + Air<LookupBuilder<Val<SC>>>
+    + for<'a> Air<VerifierConstraintFolder<'a, SC>>
+    + for<'a> Air<DebugConstraintBuilder<'a, Val<SC>, SC::Challenge>>
+    + Air<SymbolicAirBuilder<SC::Val>>,
+    A::Record: MachineRecord<Config=ZKMCoreOpts>,
     SC: StarkGenericConfig,
     SC::Val: p3_field::PrimeField32,
     SC::Challenger: Clone,
@@ -603,7 +606,7 @@ where
 
 pub fn trace_checkpoint<SC: StarkGenericConfig>(
     program: Program,
-    file: &File,
+    state: ExecutionState,
     opts: ZKMCoreOpts,
     shape_config: Option<&CoreShapeConfig<SC::Val>>,
 ) -> (Vec<ExecutionRecord>, ExecutionReport)
@@ -612,9 +615,6 @@ where
 {
     let noop = NoOpSubproofVerifier;
 
-    let mut reader = std::io::BufReader::new(file);
-    let state: ExecutionState =
-        bincode::deserialize_from(&mut reader).expect("failed to deserialize state");
     let mut runtime = Executor::recover(program, state, opts);
     runtime.maximal_shapes = shape_config.map(|config| {
         config.maximal_core_shapes(opts.shard_size.ilog2() as usize).into_iter().collect()
@@ -645,8 +645,8 @@ pub fn uni_stark_prove<SC, A>(
 where
     SC: StarkGenericConfig,
     A: Air<p3_uni_stark::SymbolicAirBuilder<SC::Val>>
-        + for<'a> Air<p3_uni_stark::ProverConstraintFolder<'a, UniConfig<SC>>>
-        + for<'a> Air<p3_uni_stark::DebugConstraintBuilder<'a, SC::Val>>,
+    + for<'a> Air<p3_uni_stark::ProverConstraintFolder<'a, UniConfig<SC>>>
+    + for<'a> Air<p3_uni_stark::DebugConstraintBuilder<'a, SC::Val>>,
 {
     p3_uni_stark::prove(&UniConfig(config.clone()), air, challenger, trace, &vec![])
 }
@@ -661,7 +661,7 @@ pub fn uni_stark_prove<SC, A>(
 where
     SC: StarkGenericConfig,
     A: Air<p3_uni_stark::SymbolicAirBuilder<SC::Val>>
-        + for<'a> Air<p3_uni_stark::ProverConstraintFolder<'a, UniConfig<SC>>>,
+    + for<'a> Air<p3_uni_stark::ProverConstraintFolder<'a, UniConfig<SC>>>,
 {
     p3_uni_stark::prove(&UniConfig(config.clone()), air, challenger, trace, &vec![])
 }
@@ -677,8 +677,8 @@ pub fn uni_stark_verify<SC, A>(
 where
     SC: StarkGenericConfig,
     A: Air<p3_uni_stark::SymbolicAirBuilder<SC::Val>>
-        + for<'a> Air<p3_uni_stark::VerifierConstraintFolder<'a, UniConfig<SC>>>
-        + for<'a> Air<p3_uni_stark::DebugConstraintBuilder<'a, SC::Val>>,
+    + for<'a> Air<p3_uni_stark::VerifierConstraintFolder<'a, UniConfig<SC>>>
+    + for<'a> Air<p3_uni_stark::DebugConstraintBuilder<'a, SC::Val>>,
 {
     p3_uni_stark::verify(&UniConfig(config.clone()), air, challenger, proof, &vec![])
 }
@@ -693,7 +693,7 @@ pub fn uni_stark_verify<SC, A>(
 where
     SC: StarkGenericConfig,
     A: Air<p3_uni_stark::SymbolicAirBuilder<SC::Val>>
-        + for<'a> Air<p3_uni_stark::VerifierConstraintFolder<'a, UniConfig<SC>>>,
+    + for<'a> Air<p3_uni_stark::VerifierConstraintFolder<'a, UniConfig<SC>>>,
 {
     p3_uni_stark::verify(&UniConfig(config.clone()), air, challenger, proof, &vec![])
 }
