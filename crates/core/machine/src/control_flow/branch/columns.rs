@@ -19,10 +19,14 @@ pub struct BranchColumns<T> {
 
     /// The target program counter.
     pub target_pc: Word<T>,
-    pub target_pc_range_checker: KoalaBearWordRangeChecker<T>,
 
     /// The next next program counter.
     pub next_next_pc: Word<T>,
+
+    /// Range check for next next program counter.
+    /// Use it instead of check on target pc since reduced next_next_pc is directly used
+    /// and target_pc equals to next_next_pc when it really works(the branch is taken).
+    pub next_next_pc_range_checker: KoalaBearWordRangeChecker<T>,
 
     /// The value of the first operand.
     pub op_a_value: Word<T>,
