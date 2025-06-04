@@ -99,12 +99,8 @@ To ensure the correctness of the folding process in a FRI-based proof system, th
 Then, for each folding round $i = 1$ to $\log d$ (d: polynomial degree):
 
 1. The verifier updates the query point using the rule $t \leftarrow t^2$, simulating the recursive domain reduction of FRI.
-2. The prover returns the folded evaluation $p_{\text{fold}}(t)$ and the corresponding Merkle path.
-3. The verifier checks whether the folding constraint holds:
-
-   $$
-   P_{\text{fold}}(t) = P_e(t) + t \cdot P_o(t),
-   $$
+2. The prover returns the folded evaluation $P_{\text{fold}}(t)$ and the corresponding Merkle path.
+3. The verifier checks whether the folding constraint holds: $P_{\text{fold}}(t) = P_e(t) + t \cdot P_o(t)$
 
    where $P_e(t)$ and $P_o(t)$ are the even and odd parts of the polynomial at the given layer.
 
