@@ -83,7 +83,17 @@ pub trait Prover<C: ZKMProverComponents>: Send + Sync {
     fn setup(&self, elf: &[u8]) -> (ZKMProvingKey, ZKMVerifyingKey);
 
     /// Prove the execution of a MIPS ELF with the given inputs, according to the given proof mode.
-    fn prove<'a>(
+    fn prove(
+        &self,
+        pk: &ZKMProvingKey,
+        stdin: ZKMStdin,
+        kind: ZKMProofKind,
+    ) -> Result<ZKMProofWithPublicValues> {
+        self.prove_impl(pk, stdin, ProofOpts::default(), ZKMContext::default(), kind)
+    }
+
+    /// Prove the execution of a MIPS ELF with the given inputs, according to the given proof mode.
+    fn prove_impl<'a>(
         &'a self,
         pk: &ZKMProvingKey,
         stdin: ZKMStdin,
@@ -196,7 +206,7 @@ impl Prover<DefaultProverComponents> for ProverClient {
         self.prover.setup(elf)
     }
 
-    fn prove<'a>(
+    fn prove_impl<'a>(
         &'a self,
         pk: &ZKMProvingKey,
         stdin: ZKMStdin,
@@ -204,7 +214,7 @@ impl Prover<DefaultProverComponents> for ProverClient {
         context: ZKMContext<'a>,
         kind: ZKMProofKind,
     ) -> Result<ZKMProofWithPublicValues> {
-        self.prover.prove(pk, stdin, opts, context, kind)
+        self.prover.prove_impl(pk, stdin, opts, context, kind)
     }
 
     fn verify(
