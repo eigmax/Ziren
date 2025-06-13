@@ -1195,7 +1195,7 @@ pub fn compress_program_from_input<C: ZKMProverComponents>(
     program
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "export-tests"))]
 pub mod tests {
     use std::{
         collections::BTreeSet,

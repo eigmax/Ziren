@@ -88,7 +88,7 @@ pub fn words_to_bytes<T: Copy>(words: &[Word<T>]) -> Vec<T> {
     words.iter().flat_map(|w| w.0).collect::<Vec<_>>()
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "export-tests"))]
 pub(crate) mod tests {
     use std::sync::Arc;
 
