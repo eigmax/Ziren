@@ -158,6 +158,12 @@ impl<'a> Prove<'a> {
         self
     }
 
+    /// Set the proof mode to the compressed-proof-to-groth16 mode.
+    pub fn compress_to_groth16(mut self) -> Self {
+        self.kind = ZKMProofKind::CompressToGroth16;
+        self
+    }
+
     /// Add a runtime [Hook](super::Hook) into the context.
     ///
     /// Hooks may be invoked from within zkMIPS by writing to the specified file descriptor `fd`

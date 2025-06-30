@@ -2,6 +2,7 @@ use stage_service::stage_service_client::StageServiceClient;
 use stage_service::{GenerateProofRequest, GetStatusRequest};
 
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 use std::{env, fs};
 
@@ -40,6 +41,7 @@ pub struct NetworkProver {
     pub endpoint: Endpoint,
     pub wallet: LocalWallet,
     pub local_prover: CpuProver,
+    compress_to_groth16: AtomicBool,
 }
 
 impl NetworkProver {
@@ -91,7 +93,12 @@ impl NetworkProver {
         }
         let wallet = private_key.parse::<LocalWallet>()?;
         let local_prover = CpuProver::new();
-        Ok(NetworkProver { endpoint, wallet, local_prover })
+        Ok(NetworkProver {
+            endpoint,
+            wallet,
+            local_prover,
+            compress_to_groth16: Default::default(),
+        })
     }
 
     pub async fn sign_ecdsa(&self, request: &mut GenerateProofRequest) -> Result<()> {
@@ -123,9 +130,13 @@ impl NetworkProver {
     async fn request_proof(&self, input: &ProverInput, kind: ZKMProofKind) -> Result<String> {
         let seg_size =
             env::var("SHARD_SIZE").ok().and_then(|s| s.parse::<u32>().ok()).unwrap_or_default();
+
+        let from_step =
+            if kind == ZKMProofKind::CompressToGroth16 { Some(Step::InAgg.into()) } else { None };
+
         let target_step = if kind == ZKMProofKind::Compressed {
             Step::InAgg
-        } else if kind == ZKMProofKind::Groth16 {
+        } else if kind == ZKMProofKind::Groth16 || kind == ZKMProofKind::CompressToGroth16 {
             Step::InSnark
         } else {
             unimplemented!("unsupported ZKMProofKind")
@@ -135,10 +146,10 @@ impl NetworkProver {
         let mut request = GenerateProofRequest {
             proof_id: proof_id.clone(),
             elf_data: input.elf.clone(),
-            // public_input_stream: input.public_inputstream.clone(),
             private_input_stream: input.private_inputstream.clone(),
             seg_size,
             target_step: Some(target_step.into()),
+            from_step,
             ..Default::default()
         };
         for receipt_input in input.receipts.iter() {
@@ -177,11 +188,15 @@ impl NetworkProver {
                     sleep(Duration::from_secs(5)).await;
                 }
                 Some(Status::Success) => {
-                    let public_values_bytes =
-                        NetworkProver::download_file(&get_status_response.public_values_url)
-                            .await?;
-                    let public_values: ZKMPublicValues =
-                        ZKMPublicValues::from(&public_values_bytes);
+                    let public_values = if self.compress_to_groth16.load(Ordering::Relaxed) {
+                        ZKMPublicValues::default()
+                    } else {
+                        let public_values_bytes =
+                            NetworkProver::download_file(&get_status_response.public_values_url)
+                                .await?;
+                        ZKMPublicValues::from(&public_values_bytes)
+                    };
+
                     // proof
                     let proof: ZKMProof =
                         serde_json::from_slice(&get_status_response.proof_with_public_inputs)
@@ -203,6 +218,10 @@ impl NetworkProver {
         kind: ZKMProofKind,
         timeout: Option<Duration>,
     ) -> Result<ZKMProofWithPublicValues> {
+        if kind == ZKMProofKind::CompressToGroth16 {
+            self.compress_to_groth16.store(true, Ordering::Relaxed);
+        }
+
         let private_input = stdin.buffer.clone();
         let mut pri_buf = Vec::new();
         bincode::serialize_into(&mut pri_buf, &private_input)?;
@@ -221,7 +240,13 @@ impl NetworkProver {
         let proof_id = self.request_proof(&prover_input, kind).await?;
 
         log::info!("calling wait_proof, proof_id={proof_id}");
-        let (proof, public_values) = self.wait_proof(&proof_id, timeout).await?;
+        let (proof, mut public_values) = self.wait_proof(&proof_id, timeout).await?;
+
+        if kind == ZKMProofKind::CompressToGroth16 {
+            assert_eq!(private_input.len(), 1);
+            public_values = bincode::deserialize(private_input.last().unwrap())?;
+        }
+
         Ok(ZKMProofWithPublicValues {
             proof,
             public_values,

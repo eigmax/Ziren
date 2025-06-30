@@ -139,6 +139,7 @@ impl Prover<DefaultProverComponents> for MockProver {
                     zkm_version: self.version().to_string(),
                 })
             }
+            ZKMProofKind::CompressToGroth16 => unreachable!(),
         }
     }
 
