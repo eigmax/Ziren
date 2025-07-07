@@ -10,6 +10,8 @@ The Groth16 proof system requires a two-phase trusted setup:
 
 ## Prerequisites
 
+Download the Plonk SRS keys and prepare the directory to generate Groth16 setup keys.
+
 ```bash
 make build-circuits
 ```
@@ -18,7 +20,7 @@ The trusted setup process will overwrite the proving key, verifying key, and the
 contracts in the `build/groth16` directory:
 
 ```bash
-zkMIPS/crates/prover$ tree build/groth16
+Ziren/crates/prover$ tree build/groth16
 build/groth16
 ├── constraints.json
 ├── groth16_circuit.bin
@@ -44,10 +46,11 @@ wget https://storage.googleapis.com/zkevm/ptau/powersOfTau28_hez_final_${NB_CONS
 
 ```bash
 git clone https://github.com/ProjectZKM/semaphore-gnark-11.git
+cd semaphore-gnark-11
 git checkout zkm2
 go build
 mv semaphore-mtb-setup semaphore-gnark-11
-cp semaphore-gnark-11 ../zkMIPS/crates/prover/
+cp semaphore-gnark-11 ../Ziren/crates/prover/
 ```
 
 ## Phase 1 Setup
