@@ -11,6 +11,7 @@ categories = { workspace = true }
 
 [dependencies]
 p3-bn254-fr = { workspace = true }
+p3-bls12381-fr = { workspace = true }
 p3-koala-bear = { workspace = true }
 p3-field = { workspace = true }
 p3-symmetric = { workspace = true }
@@ -36,5 +37,7 @@ rand = "0.8.5"
 criterion = { version = "0.5.1", features = ["html_reports"] }
 
 [features]
-default = ["debug"]
+default = ["debug", "bls12381"]
 debug = []
+bls12381 = []
+bn254 = []

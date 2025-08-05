@@ -33,14 +33,22 @@ impl ProofSystem {
     fn build_fn(&self) -> unsafe extern "C" fn(*mut c_char) {
         match self {
             ProofSystem::Plonk => bind::BuildPlonkBn254,
+            #[cfg(feature = "bn254")]
             ProofSystem::Groth16 => bind::BuildGroth16Bn254,
+            #[cfg(feature = "bls12381")]
+            ProofSystem::Groth16 => bind::BuildGroth16Bls12381,
+            _ => todo!(),
         }
     }
 
     fn prove_fn(&self) -> ProveFunction {
         match self {
             ProofSystem::Plonk => ProveFunction::Plonk(bind::ProvePlonkBn254),
+            #[cfg(feature = "bn254")]
             ProofSystem::Groth16 => ProveFunction::Groth16(bind::ProveGroth16Bn254),
+            #[cfg(feature = "bls12381")]
+            ProofSystem::Groth16 => ProveFunction::Groth16(bind::ProveGroth16Bls12381),
+            _ => todo!(),
         }
     }
 
@@ -50,14 +58,22 @@ impl ProofSystem {
     {
         match self {
             ProofSystem::Plonk => bind::VerifyPlonkBn254,
+            #[cfg(feature = "bn254")]
             ProofSystem::Groth16 => bind::VerifyGroth16Bn254,
+            #[cfg(feature = "bls12381")]
+            ProofSystem::Groth16 => bind::VerifyGroth16Bls12381,
+            _ => todo!(),
         }
     }
 
     fn test_fn(&self) -> unsafe extern "C" fn(*mut c_char, *mut c_char) -> *mut c_char {
         match self {
             ProofSystem::Plonk => bind::TestPlonkBn254,
+            #[cfg(feature = "bn254")]
             ProofSystem::Groth16 => bind::TestGroth16Bn254,
+            #[cfg(feature = "bls12381")]
+            ProofSystem::Groth16 => bind::TestGroth16Bls12381,
+            _ => todo!(),
         }
     }
 }
@@ -85,11 +101,19 @@ fn prove(system: ProofSystem, data_dir: &str, witness_path: &str) -> ProofResult
                     func(data_dir.as_ptr() as *mut c_char, witness_path.as_ptr() as *mut c_char);
                 ProofResult::Plonk(proof)
             }
+            #[cfg(feature = "bn254")]
             ProveFunction::Groth16(func) => {
                 let proof =
                     func(data_dir.as_ptr() as *mut c_char, witness_path.as_ptr() as *mut c_char);
                 ProofResult::Groth16(proof)
             }
+            #[cfg(feature = "bls12381")]
+            ProveFunction::Groth16(func) => {
+                let proof =
+                    func(data_dir.as_ptr() as *mut c_char, witness_path.as_ptr() as *mut c_char);
+                ProofResult::Groth16(proof)
+            }
+            _ => todo!(),
         }
     }
 }

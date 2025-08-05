@@ -1,14 +1,18 @@
 use std::borrow::Borrow;
 
 use p3_bn254_fr::Bn254Fr;
+use p3_bls12381_fr::Bls12381Fr;
+
 use p3_field::FieldAlgebra;
 
 use p3_fri::{CommitPhaseProofStep, QueryProof};
 pub use zkm_recursion_compiler::ir::Witness as OuterWitness;
+
 use zkm_recursion_compiler::{
     config::OuterConfig,
     ir::{Builder, Var},
 };
+
 use zkm_recursion_core::stark::{
     KoalaBearPoseidon2Outer, OuterBatchOpening, OuterChallenge, OuterChallengeMmcs, OuterDigest,
     OuterFriProof, OuterInputProof, OuterVal,
@@ -22,11 +26,21 @@ use crate::{
 use super::{WitnessWriter, Witnessable};
 
 impl WitnessWriter<OuterConfig> for OuterWitness<OuterConfig> {
+    #[cfg(feature = "bn254")]
     fn write_bit(&mut self, value: bool) {
         self.vars.push(Bn254Fr::from_bool(value));
     }
-
+    #[cfg(feature = "bls12381")]
+    fn write_bit(&mut self, value: bool) {
+        self.vars.push(Bls12381Fr::from_bool(value));
+    }
+    #[cfg(feature = "bn254")]
     fn write_var(&mut self, value: Bn254Fr) {
+        self.vars.push(value);
+    }
+
+    #[cfg(feature = "bls12381")]
+    fn write_var(&mut self, value: Bls12381Fr) {
         self.vars.push(value);
     }
 
@@ -39,8 +53,21 @@ impl WitnessWriter<OuterConfig> for OuterWitness<OuterConfig> {
     }
 }
 
+#[cfg(feature = "bn254")]
 impl<C: CircuitConfig<N = Bn254Fr>> Witnessable<C> for Bn254Fr {
     type WitnessVariable = Var<Bn254Fr>;
+
+    fn read(&self, builder: &mut Builder<C>) -> Self::WitnessVariable {
+        builder.witness_var()
+    }
+    fn write(&self, witness: &mut impl WitnessWriter<C>) {
+        witness.write_var(*self)
+    }
+}
+
+#[cfg(feature = "bls12381")]
+impl<C: CircuitConfig<N = Bls12381Fr>> Witnessable<C> for Bls12381Fr {
+    type WitnessVariable = Var<Bls12381Fr>;
 
     fn read(&self, builder: &mut Builder<C>) -> Self::WitnessVariable {
         builder.witness_var()

@@ -91,6 +91,7 @@ impl Groth16Bn254Prover {
         build_groth16_bn254(build_dir.to_str().unwrap());
 
         // Build the contracts.
+        #[cfg(feature = "bn254")]
         Self::build_contracts(build_dir);
     }
 

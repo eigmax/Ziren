@@ -6,7 +6,10 @@ use challenger::{
 };
 use hash::{FieldHasherVariable, Posedion2KoalaBearHasherVariable};
 use itertools::izip;
+
 use p3_bn254_fr::Bn254Fr;
+use p3_bls12381_fr::Bls12381Fr;
+
 use p3_field::FieldAlgebra;
 use p3_matrix::dense::RowMajorMatrix;
 use std::iter::{repeat, zip};
@@ -607,7 +610,33 @@ impl<C: CircuitConfig<F = KoalaBear, Bit = Felt<KoalaBear>>> KoalaBearFriConfigV
     }
 }
 
+#[cfg(feature = "bn254")]
 impl<C: CircuitConfig<F = KoalaBear, N = Bn254Fr, Bit = Var<Bn254Fr>>> KoalaBearFriConfigVariable<C>
+    for KoalaBearPoseidon2Outer
+{
+    type FriChallengerVariable = MultiField32ChallengerVariable<C>;
+
+    fn challenger_variable(&self, builder: &mut Builder<C>) -> Self::FriChallengerVariable {
+        MultiField32ChallengerVariable::new(builder)
+    }
+
+    fn commit_recursion_public_values(
+        builder: &mut Builder<C>,
+        public_values: RecursionPublicValues<Felt<<C>::F>>,
+    ) {
+        let committed_values_digest_bytes_felts: [Felt<_>; 32] =
+            words_to_bytes(&public_values.committed_value_digest).try_into().unwrap();
+        let committed_values_digest_bytes: Var<_> =
+            felt_bytes_to_bn254_var(builder, &committed_values_digest_bytes_felts);
+        builder.commit_committed_values_digest_circuit(committed_values_digest_bytes);
+
+        let vkey_hash = felts_to_bn254_var(builder, &public_values.zkm_vk_digest);
+        builder.commit_vkey_hash_circuit(vkey_hash);
+    }
+}
+
+#[cfg(feature = "bls12381")]
+impl<C: CircuitConfig<F = KoalaBear, N = Bls12381Fr, Bit = Var<Bls12381Fr>>> KoalaBearFriConfigVariable<C>
     for KoalaBearPoseidon2Outer
 {
     type FriChallengerVariable = MultiField32ChallengerVariable<C>;

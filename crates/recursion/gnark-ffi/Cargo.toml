@@ -33,5 +33,7 @@ cc = "1.1"
 cfg-if = "1.0"
 
 [features]
-default = ["native"]
+default = ["native", "bls12381"]
 native = []
+bls12381 = []
+bn254 = []

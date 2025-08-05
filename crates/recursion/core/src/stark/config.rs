@@ -1,3 +1,5 @@
+#[cfg(feature = "bls12381")]
+use p3_bls12381_fr::{Bls12381Fr, Poseidon2Bls12381};
 use p3_bn254_fr::{Bn254Fr, Poseidon2Bn254};
 use p3_challenger::MultiField32Challenger;
 use p3_commit::ExtensionMmcs;
@@ -22,15 +24,42 @@ pub const OUTER_MULTI_FIELD_CHALLENGER_DIGEST_SIZE: usize = 1;
 /// A configuration for outer recursion.
 pub type OuterVal = KoalaBear;
 pub type OuterChallenge = BinomialExtensionField<OuterVal, 4>;
+
+#[cfg(feature = "bn254")]
 pub type OuterPerm = Poseidon2Bn254<3>;
+
+#[cfg(feature = "bls12381")]
+pub type OuterPerm = Poseidon2Bls12381<3>;
+
+#[cfg(feature = "bn254")]
 pub type OuterHash =
     MultiField32PaddingFreeSponge<OuterVal, Bn254Fr, OuterPerm, 3, 16, DIGEST_SIZE>;
+
+#[cfg(feature = "bls12381")]
+pub type OuterHash =
+    MultiField32PaddingFreeSponge<OuterVal, Bls12381Fr, OuterPerm, 3, 16, DIGEST_SIZE>;
+
+#[cfg(feature = "bn254")]
 pub type OuterDigestHash = Hash<OuterVal, Bn254Fr, DIGEST_SIZE>;
+#[cfg(feature = "bls12381")]
+pub type OuterDigestHash = Hash<OuterVal, Bls12381Fr, DIGEST_SIZE>;
+
+#[cfg(feature = "bn254")]
 pub type OuterDigest = [Bn254Fr; DIGEST_SIZE];
+#[cfg(feature = "bls12381")]
+pub type OuterDigest = [Bls12381Fr; DIGEST_SIZE];
+
 pub type OuterCompress = TruncatedPermutation<OuterPerm, 2, 1, 3>;
+
+#[cfg(feature = "bn254")]
 pub type OuterValMmcs = MerkleTreeMmcs<KoalaBear, Bn254Fr, OuterHash, OuterCompress, 1>;
+#[cfg(feature = "bls12381")]
+pub type OuterValMmcs = MerkleTreeMmcs<KoalaBear, Bls12381Fr, OuterHash, OuterCompress, 1>;
+
 pub type OuterChallengeMmcs = ExtensionMmcs<OuterVal, OuterChallenge, OuterValMmcs>;
 pub type OuterDft = Radix2DitParallel<OuterVal>;
+
+#[cfg(feature = "bn254")]
 pub type OuterChallenger = MultiField32Challenger<
     OuterVal,
     Bn254Fr,
@@ -38,6 +67,16 @@ pub type OuterChallenger = MultiField32Challenger<
     OUTER_MULTI_FIELD_CHALLENGER_WIDTH,
     OUTER_MULTI_FIELD_CHALLENGER_RATE,
 >;
+
+#[cfg(feature = "bls12381")]
+pub type OuterChallenger = MultiField32Challenger<
+    OuterVal,
+    Bls12381Fr,
+    OuterPerm,
+    OUTER_MULTI_FIELD_CHALLENGER_WIDTH,
+    OUTER_MULTI_FIELD_CHALLENGER_RATE,
+>;
+
 pub type OuterPcs = TwoAdicFriPcs<OuterVal, OuterDft, OuterValMmcs, OuterChallengeMmcs>;
 
 pub type OuterInputProof = Vec<BatchOpening<OuterVal, OuterValMmcs>>;
@@ -175,8 +214,13 @@ impl StarkGenericConfig for KoalaBearPoseidon2Outer {
 }
 
 impl ZeroCommitment<KoalaBearPoseidon2Outer> for OuterPcs {
+    #[cfg(feature = "bn254")]
     fn zero_commitment(&self) -> Com<KoalaBearPoseidon2Outer> {
         OuterDigestHash::from([Bn254Fr::ZERO; DIGEST_SIZE])
+    }
+    #[cfg(feature = "bls12381")]
+    fn zero_commitment(&self) -> Com<KoalaBearPoseidon2Outer> {
+        OuterDigestHash::from([Bls12381Fr::ZERO; DIGEST_SIZE])
     }
 }
 

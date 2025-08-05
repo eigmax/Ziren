@@ -44,27 +44,28 @@ debug-assertions = true
 
 
 [workspace.dependencies]
-p3-air = { git = "https://github.com/ProjectZKM/Plonky3" }
-p3-field = { git = "https://github.com/ProjectZKM/Plonky3" }
-p3-challenger = { git = "https://github.com/ProjectZKM/Plonky3" }
-p3-commit = { git = "https://github.com/ProjectZKM/Plonky3" }
-p3-dft = { git = "https://github.com/ProjectZKM/Plonky3" }
-p3-matrix = { git = "https://github.com/ProjectZKM/Plonky3" }
-p3-maybe-rayon = { git = "https://github.com/ProjectZKM/Plonky3" }
-p3-util = { git = "https://github.com/ProjectZKM/Plonky3" }
-p3-fri = { git = "https://github.com/ProjectZKM/Plonky3" }
-p3-koala-bear = { git = "https://github.com/ProjectZKM/Plonky3" }
-p3-circle = { git = "https://github.com/ProjectZKM/Plonky3" }
-p3-keccak = { git = "https://github.com/ProjectZKM/Plonky3" }
-p3-keccak-air = { git = "https://github.com/ProjectZKM/Plonky3" }
-p3-mds = { git = "https://github.com/ProjectZKM/Plonky3" }
-p3-merkle-tree = { git = "https://github.com/ProjectZKM/Plonky3" }
-p3-mersenne-31 = { git = "https://github.com/ProjectZKM/Plonky3" }
-p3-monty-31 = { git = "https://github.com/ProjectZKM/Plonky3" }
-p3-poseidon2 = { git = "https://github.com/ProjectZKM/Plonky3" }
-p3-symmetric = { git = "https://github.com/ProjectZKM/Plonky3" }
-p3-bn254-fr = { git = "https://github.com/ProjectZKM/Plonky3" }
-p3-uni-stark = { git = "https://github.com/ProjectZKM/Plonky3" }
+p3-air = { git = "https://github.com/ProjectZKM/Plonky3", branch = "feat/bls12381-fr" }
+p3-field = { git = "https://github.com/ProjectZKM/Plonky3", branch = "feat/bls12381-fr" }
+p3-challenger = { git = "https://github.com/ProjectZKM/Plonky3", branch = "feat/bls12381-fr" }
+p3-commit = { git = "https://github.com/ProjectZKM/Plonky3", branch = "feat/bls12381-fr" }
+p3-dft = { git = "https://github.com/ProjectZKM/Plonky3", branch = "feat/bls12381-fr" }
+p3-matrix = { git = "https://github.com/ProjectZKM/Plonky3", branch = "feat/bls12381-fr" }
+p3-maybe-rayon = { git = "https://github.com/ProjectZKM/Plonky3", branch = "feat/bls12381-fr" }
+p3-util = { git = "https://github.com/ProjectZKM/Plonky3", branch = "feat/bls12381-fr" }
+p3-fri = { git = "https://github.com/ProjectZKM/Plonky3", branch = "feat/bls12381-fr" }
+p3-koala-bear = { git = "https://github.com/ProjectZKM/Plonky3", branch = "feat/bls12381-fr" }
+p3-circle = { git = "https://github.com/ProjectZKM/Plonky3", branch = "feat/bls12381-fr" }
+p3-keccak = { git = "https://github.com/ProjectZKM/Plonky3", branch = "feat/bls12381-fr" }
+p3-keccak-air = { git = "https://github.com/ProjectZKM/Plonky3", branch = "feat/bls12381-fr" }
+p3-mds = { git = "https://github.com/ProjectZKM/Plonky3", branch = "feat/bls12381-fr" }
+p3-merkle-tree = { git = "https://github.com/ProjectZKM/Plonky3", branch = "feat/bls12381-fr" }
+p3-mersenne-31 = { git = "https://github.com/ProjectZKM/Plonky3", branch = "feat/bls12381-fr" }
+p3-monty-31 = { git = "https://github.com/ProjectZKM/Plonky3", branch = "feat/bls12381-fr" }
+p3-poseidon2 = { git = "https://github.com/ProjectZKM/Plonky3", branch = "feat/bls12381-fr" }
+p3-symmetric = { git = "https://github.com/ProjectZKM/Plonky3", branch = "feat/bls12381-fr" }
+p3-bn254-fr = { git = "https://github.com/ProjectZKM/Plonky3", branch = "feat/bls12381-fr" }
+p3-bls12381-fr = { git = "https://github.com/ProjectZKM/Plonky3", branch = "feat/bls12381-fr" }
+p3-uni-stark = { git = "https://github.com/ProjectZKM/Plonky3", branch = "feat/bls12381-fr" }
 
 itertools = "0.13.0"
 tracing = "0.1.37"

@@ -432,6 +432,7 @@ pub(crate) mod tests {
         hash::{FieldHasherVariable, BN254_DIGEST_SIZE},
         utils::tests::run_test_recursion,
     };
+    use p3_bls12381_fr::Bls12381Fr;
     use p3_bn254_fr::Bn254Fr;
     use p3_challenger::{CanObserve, CanSample, CanSampleBits, FieldChallenger};
     use p3_field::FieldAlgebra;
@@ -624,8 +625,16 @@ pub(crate) mod tests {
         let perm = outer_perm();
         let compressor = OuterCompress::new(perm.clone());
 
+        #[cfg(feature = "bls12381")] 
+        let a: [Bls12381Fr; 1] = [Bls12381Fr::TWO];
+        #[cfg(feature = "bls12381")] 
+        let b: [Bls12381Fr; 1] = [Bls12381Fr::TWO];
+
+        #[cfg(feature = "bn254")] 
         let a: [Bn254Fr; 1] = [Bn254Fr::TWO];
+        #[cfg(feature = "bn254")] 
         let b: [Bn254Fr; 1] = [Bn254Fr::TWO];
+
         let gt = compressor.compress([a, b]);
 
         let mut builder = Builder::<C>::default();

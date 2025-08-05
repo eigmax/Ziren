@@ -6,6 +6,7 @@ use p3_field::{Field, FieldAlgebra};
 use p3_koala_bear::KoalaBear;
 
 use p3_bn254_fr::Bn254Fr;
+use p3_bls12381_fr::Bls12381Fr;
 use p3_symmetric::Permutation;
 use zkm_recursion_compiler::{
     circuit::CircuitV2Builder,
@@ -154,6 +155,7 @@ impl<C: CircuitConfig<F = KoalaBear, Bit = Felt<KoalaBear>>> FieldHasherVariable
 
 pub const BN254_DIGEST_SIZE: usize = 1;
 
+#[cfg(feature = "bn254")]
 impl FieldHasher<KoalaBear> for KoalaBearPoseidon2Outer {
     type Digest = [Bn254Fr; BN254_DIGEST_SIZE];
 
@@ -164,6 +166,18 @@ impl FieldHasher<KoalaBear> for KoalaBearPoseidon2Outer {
     }
 }
 
+#[cfg(feature = "bls12381")]
+impl FieldHasher<KoalaBear> for KoalaBearPoseidon2Outer {
+    type Digest = [Bls12381Fr; BN254_DIGEST_SIZE];
+
+    fn constant_compress(input: [Self::Digest; 2]) -> Self::Digest {
+        let mut state = [input[0][0], input[1][0], Bls12381Fr::ZERO];
+        outer_perm().permute_mut(&mut state);
+        [state[0]; BN254_DIGEST_SIZE]
+    }
+}
+
+#[cfg(feature = "bn254")]
 impl<C: CircuitConfig<F = KoalaBear, N = Bn254Fr, Bit = Var<Bn254Fr>>> FieldHasherVariable<C>
     for KoalaBearPoseidon2Outer
 {
@@ -171,6 +185,73 @@ impl<C: CircuitConfig<F = KoalaBear, N = Bn254Fr, Bit = Var<Bn254Fr>>> FieldHash
 
     fn hash(builder: &mut Builder<C>, input: &[Felt<<C as Config>::F>]) -> Self::DigestVariable {
         assert!(C::N::bits() == p3_bn254_fr::Bn254Fr::bits());
+        assert!(C::F::bits() == p3_koala_bear::KoalaBear::bits());
+        let num_f_elms = C::N::bits() / C::F::bits();
+        let mut state: [Var<C::N>; OUTER_MULTI_FIELD_CHALLENGER_WIDTH] =
+            [builder.eval(C::N::ZERO), builder.eval(C::N::ZERO), builder.eval(C::N::ZERO)];
+        for block_chunk in &input.iter().chunks(POSEIDON_2_BB_RATE) {
+            for (chunk_id, chunk) in (&block_chunk.chunks(num_f_elms)).into_iter().enumerate() {
+                let chunk = chunk.copied().collect::<Vec<_>>();
+                state[chunk_id] = reduce_32(builder, chunk.as_slice());
+            }
+            builder.push_op(DslIr::CircuitPoseidon2Permute(state))
+        }
+
+        [state[0]; BN254_DIGEST_SIZE]
+    }
+
+    fn compress(
+        builder: &mut Builder<C>,
+        input: [Self::DigestVariable; 2],
+    ) -> Self::DigestVariable {
+        let state: [Var<C::N>; OUTER_MULTI_FIELD_CHALLENGER_WIDTH] =
+            [builder.eval(input[0][0]), builder.eval(input[1][0]), builder.eval(C::N::ZERO)];
+        builder.push_op(DslIr::CircuitPoseidon2Permute(state));
+        [state[0]; BN254_DIGEST_SIZE]
+    }
+
+    fn assert_digest_eq(
+        builder: &mut Builder<C>,
+        a: Self::DigestVariable,
+        b: Self::DigestVariable,
+    ) {
+        zip(a, b).for_each(|(e1, e2)| builder.assert_var_eq(e1, e2));
+    }
+
+    fn select_chain_digest(
+        builder: &mut Builder<C>,
+        should_swap: <C as CircuitConfig>::Bit,
+        input: [Self::DigestVariable; 2],
+    ) -> [Self::DigestVariable; 2] {
+        let result0: [Var<_>; BN254_DIGEST_SIZE] = core::array::from_fn(|j| {
+            let result = builder.uninit();
+            builder.push_op(DslIr::CircuitSelectV(should_swap, input[1][j], input[0][j], result));
+            result
+        });
+        let result1: [Var<_>; BN254_DIGEST_SIZE] = core::array::from_fn(|j| {
+            let result = builder.uninit();
+            builder.push_op(DslIr::CircuitSelectV(should_swap, input[0][j], input[1][j], result));
+            result
+        });
+
+        [result0, result1]
+    }
+
+    fn print_digest(builder: &mut Builder<C>, digest: Self::DigestVariable) {
+        for d in digest.iter() {
+            builder.print_v(*d);
+        }
+    }
+}
+
+#[cfg(feature = "bls12381")]
+impl<C: CircuitConfig<F = KoalaBear, N = Bls12381Fr, Bit = Var<Bls12381Fr>>> FieldHasherVariable<C>
+    for KoalaBearPoseidon2Outer
+{
+    type DigestVariable = [Var<Bls12381Fr>; BN254_DIGEST_SIZE];
+
+    fn hash(builder: &mut Builder<C>, input: &[Felt<<C as Config>::F>]) -> Self::DigestVariable {
+        assert!(C::N::bits() == p3_bls12381_fr::Bls12381Fr::bits());
         assert!(C::F::bits() == p3_koala_bear::KoalaBear::bits());
         let num_f_elms = C::N::bits() / C::F::bits();
         let mut state: [Var<C::N>; OUTER_MULTI_FIELD_CHALLENGER_WIDTH] =

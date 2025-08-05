@@ -2,22 +2,22 @@
 package poseidon2
 
 import (
-	"github.com/consensys/gnark/frontend"
 	"github.com/ProjectZKM/zkm-recursion-gnark/zkm/koalabear"
+	"github.com/consensys/gnark/frontend"
 )
 
 // Poseidon2 round constants for a state consisting of three BN254 field elements.
 var rc3 [numExternalRounds + numInternalRounds][width]frontend.Variable
 
 // Poseidon2 round constraints for a state consisting of 16 KoalaBear field elements.
-
 var rc16 [30][KOALABEAR_WIDTH]koalabear.Variable
 
 func init() {
-	init_rc3()
+	init_rc3_bls12()
 	init_rc16()
 }
 
+/*
 func init_rc3() {
 	round := 0
 
@@ -468,6 +468,7 @@ func init_rc3() {
 		frontend.Variable("0x0fc1bbceba0590f5abbdffa6d3b35e3297c021a3a409926d0e2d54dc1c84fda6"),
 	}
 }
+*/
 
 func init_rc16() {
 	round := 0

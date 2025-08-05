@@ -6,7 +6,10 @@ use std::{
 };
 
 use itertools::Itertools;
+
 use p3_bn254_fr::Bn254Fr;
+use p3_bls12381_fr::Bls12381Fr;
+
 use p3_field::{FieldAlgebra, PrimeField32};
 use p3_koala_bear::KoalaBear;
 use p3_symmetric::CryptographicHasher;
@@ -15,7 +18,7 @@ use zkm_core_machine::{io::ZKMStdin, reduce::ZKMReduceProof};
 use zkm_recursion_circuit::machine::RootPublicValues;
 use zkm_recursion_core::{
     air::{RecursionPublicValues, NUM_PV_ELMS_TO_HASH},
-    stark::KoalaBearPoseidon2Outer,
+    stark::{KoalaBearPoseidon2Outer},
 };
 use zkm_stark::{koala_bear_poseidon2::MyHash as InnerHash, Word, ZKMCoreOpts};
 
@@ -31,7 +34,13 @@ pub fn zkm_vkey_digest_koalabear(
 }
 
 /// Get the Ziren vkey Bn Poseidon2 digest this reduce proof is representing.
+#[cfg(feature = "bn254")]
 pub fn zkm_vkey_digest_bn254(proof: &ZKMReduceProof<KoalaBearPoseidon2Outer>) -> Bn254Fr {
+    koalabears_to_bn254(&zkm_vkey_digest_koalabear(proof))
+}
+
+#[cfg(feature = "bls12381")]
+pub fn zkm_vkey_digest_bn254(proof: &ZKMReduceProof<KoalaBearPoseidon2Outer>) -> Bls12381Fr {
     koalabears_to_bn254(&zkm_vkey_digest_koalabear(proof))
 }
 
@@ -89,9 +98,22 @@ pub fn is_recursion_public_values_valid(
 }
 
 /// Get the committed values Bn Poseidon2 digest this reduce proof is representing.
+#[cfg(feature = "bn254")]
 pub fn zkm_committed_values_digest_bn254(
     proof: &ZKMReduceProof<KoalaBearPoseidon2Outer>,
 ) -> Bn254Fr {
+    let proof = &proof.proof;
+    let pv: &RecursionPublicValues<KoalaBear> = proof.public_values.as_slice().borrow();
+    let committed_values_digest_bytes: [KoalaBear; 32] =
+        words_to_bytes(&pv.committed_value_digest).try_into().unwrap();
+    koalabear_bytes_to_bn254(&committed_values_digest_bytes)
+}
+
+/// Get the committed values Bn Poseidon2 digest this reduce proof is representing.
+#[cfg(feature = "bls12381")]
+pub fn zkm_committed_values_digest_bn254(
+    proof: &ZKMReduceProof<KoalaBearPoseidon2Outer>,
+) -> Bls12381Fr {
     let proof = &proof.proof;
     let pv: &RecursionPublicValues<KoalaBear> = proof.public_values.as_slice().borrow();
     let committed_values_digest_bytes: [KoalaBear; 32] =
@@ -129,6 +151,7 @@ pub fn words_to_bytes<T: Copy>(words: &[Word<T>]) -> Vec<T> {
 
 /// Convert 8 KoalaBear words into a Bn254Fr field element by shifting by 31 bits each time. The last
 /// word becomes the least significant bits.
+#[cfg(feature = "bn254")]
 pub fn koalabears_to_bn254(digest: &[KoalaBear; 8]) -> Bn254Fr {
     let mut result = Bn254Fr::ZERO;
     for word in digest.iter() {
@@ -140,8 +163,23 @@ pub fn koalabears_to_bn254(digest: &[KoalaBear; 8]) -> Bn254Fr {
     result
 }
 
+/// Convert 8 KoalaBear words into a Bn254Fr field element by shifting by 31 bits each time. The last
+/// word becomes the least significant bits.
+#[cfg(feature = "bls12381")]
+pub fn koalabears_to_bn254(digest: &[KoalaBear; 8]) -> Bls12381Fr {
+    let mut result = Bls12381Fr::ZERO;
+    for word in digest.iter() {
+        // Since KoalaBear prime is less than 2^31, we can shift by 31 bits each time and still be
+        // within the Bn254Fr field, so we don't have to truncate the top 3 bits.
+        result *= Bls12381Fr::from_canonical_u64(1 << 31);
+        result += Bls12381Fr::from_canonical_u32(word.as_canonical_u32());
+    }
+    result
+}
+
 /// Convert 32 KoalaBear bytes into a Bn254Fr field element. The first byte's most significant 3 bits
 /// (which would become the 3 most significant bits) are truncated.
+#[cfg(feature = "bn254")]
 pub fn koalabear_bytes_to_bn254(bytes: &[KoalaBear; 32]) -> Bn254Fr {
     let mut result = Bn254Fr::ZERO;
     for (i, byte) in bytes.iter().enumerate() {
@@ -152,6 +190,24 @@ pub fn koalabear_bytes_to_bn254(bytes: &[KoalaBear; 32]) -> Bn254Fr {
         } else {
             result *= Bn254Fr::from_canonical_u32(256);
             result += Bn254Fr::from_canonical_u32(byte.as_canonical_u32());
+        }
+    }
+    result
+}
+
+/// Convert 32 KoalaBear bytes into a Bn254Fr field element. The first byte's most significant 3 bits
+/// (which would become the 3 most significant bits) are truncated.
+#[cfg(feature = "bls12381")]
+pub fn koalabear_bytes_to_bn254(bytes: &[KoalaBear; 32]) -> Bls12381Fr {
+    let mut result = Bls12381Fr::ZERO;
+    for (i, byte) in bytes.iter().enumerate() {
+        debug_assert!(byte < &KoalaBear::from_canonical_u32(256));
+        if i == 0 {
+            // 32 bytes is more than Bn254 prime, so we need to truncate the top 3 bits.
+            result = Bls12381Fr::from_canonical_u32(byte.as_canonical_u32() & 0x1f);
+        } else {
+            result *= Bls12381Fr::from_canonical_u32(256);
+            result += Bls12381Fr::from_canonical_u32(byte.as_canonical_u32());
         }
     }
     result
