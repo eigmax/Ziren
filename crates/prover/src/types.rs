@@ -2,8 +2,10 @@ use std::{fs::File, path::Path};
 
 use anyhow::Result;
 use clap::ValueEnum;
-use p3_bn254_fr::Bn254Fr;
-use p3_bls12381_fr::Bls12381Fr;
+#[cfg(feature = "bls12381")]
+use p3_bls12381_fr::Bls12381Fr as FR;
+#[cfg(feature = "bn254")]
+use p3_bn254_fr::Bn254Fr as FR;
 use p3_commit::{Pcs, TwoAdicMultiplicativeCoset};
 use p3_field::{FieldAlgebra, PrimeField, PrimeField32, TwoAdicField};
 use p3_koala_bear::KoalaBear;
@@ -48,16 +50,9 @@ pub trait HashableKey {
     /// Hash the key into a digest of  u32 elements.
     fn hash_u32(&self) -> [u32; DIGEST_SIZE];
 
-    #[cfg(feature = "bn254")]
-    fn hash_bn254(&self) -> Bn254Fr {
+    fn hash_bn254(&self) -> FR {
         koalabears_to_bn254(&self.hash_koalabear())
     }
-
-    #[cfg(feature = "bls12381")]
-    fn hash_bn254(&self) -> Bls12381Fr {
-        koalabears_to_bn254(&self.hash_koalabear())
-    }
-
 
     fn bytes32(&self) -> String {
         let vkey_digest_bn254 = self.hash_bn254();
