@@ -14,5 +14,6 @@ unsafe impl GlobalAlloc for SimpleAlloc {
     unsafe fn dealloc(&self, _: *mut u8, _: Layout) {}
 }
 
+#[cfg(all(feature = "bump", not(feature = "embedded")))]
 #[global_allocator]
 static HEAP: SimpleAlloc = SimpleAlloc;

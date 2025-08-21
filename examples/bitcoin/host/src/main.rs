@@ -1,37 +1,28 @@
 use zkm_sdk::{include_elf, utils, ProverClient, ZKMProofWithPublicValues, ZKMStdin};
 
 /// The ELF we want to execute inside the zkVM.
-const ELF: &[u8] = include_elf!("large-sum");
+const BTC_ELF: &[u8] = include_elf!("bitcoin");
 
 fn main() {
-    // Setup logging.
+    // Setup a tracer for logging.
     utils::setup_logger();
 
-    // The input stream that the guest will read from using `zkm_zkvm::io::read`. Note that the
-    // types of the elements in the input stream must match the types being read in the guest.
+    // Create a new stdin with the input for the program.
     let mut stdin = ZKMStdin::new();
-    // simulate big data, split into chunks of 1MB
-    let data = vec![1u8; 1024 * 1024];
-    let n: u32 = 1; //tmply set to 1 for testing, can be changed to a larger number
-    stdin.write(&n);
-    for _ in 0..n {
-        stdin.write(&data);
-    }
+    let hash = [123u8; 32];
+    stdin.write(&hash);
 
-    // Create a `ProverClient` method.
+    // Generate the proof for the given program and input.
     let client = ProverClient::new();
+    let (pk, vk) = client.setup(BTC_ELF);
 
     // Execute the guest using the `ProverClient.execute` method, without generating a proof.
-    let (_, report) = client.execute(ELF, stdin.clone()).run().unwrap();
+    let (_, report) = client.execute(BTC_ELF, stdin.clone()).run().unwrap();
     println!("executed program with {} cycles", report.total_instruction_count());
 
-    // Generate the proof for the given guest and input.
-    let (pk, vk) = client.setup(ELF);
-    let proof = client.prove(&pk, stdin).run().unwrap();
+    let proof = client.prove(&pk, stdin).run().expect("proving failed");
 
-    println!("generated proof");
-
-    // Verify proof and public values
+    // Verify proof.
     client.verify(&proof, &vk).expect("verification failed");
 
     // Test a round trip of proof serialization and deserialization.

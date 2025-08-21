@@ -47,5 +47,6 @@ unsafe impl GlobalAlloc for EmbeddedAlloc {
     }
 }
 
+#[cfg(feature = "embedded")]
 #[global_allocator]
 static HEAP: EmbeddedAlloc = EmbeddedAlloc;
