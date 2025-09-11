@@ -13,7 +13,7 @@
         - [Example Walkthrough](./dev/example-program.md)
     - [Prover](./dev/prover.md)
     - [Verifier](./dev/verifier.md)
-    - [Proof Composition](./dev/proof-composition.md)
+    - [Proof Aggregation](./dev/proof-aggregation.md)
     - [Precompiles](./dev/precompiles.md)
     - [Patched Crates](./dev/patched-crates.md)
     - [Optimizations](./dev/optimizations.md)
