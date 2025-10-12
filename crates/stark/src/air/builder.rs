@@ -21,7 +21,7 @@ pub const DEFAULT_PC_INC: u32 = 4;
 /// A valid pc should be divisible by 4, so we use 1 to indicate that the pc is not used.
 pub const UNUSED_PC: u32 = 1;
 
-/// The scope of an lookup.
+/// The scope of a lookup.
 #[derive(
     Debug,
     Clone,
@@ -328,7 +328,7 @@ pub trait InstructionAirBuilder: BaseAirBuilder {
         )
     }
 
-    /// Sends an syscall operation to be processed (with "ECALL" opcode).
+    /// Sends a syscall operation to be processed (with "ECALL" opcode).
     #[allow(clippy::too_many_arguments)]
     fn send_syscall(
         &mut self,
