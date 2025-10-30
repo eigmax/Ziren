@@ -116,20 +116,13 @@ impl SyscallInstrsChip {
         let syscall_id = syscall_code[0] + syscall_code[1] * AB::Expr::from_canonical_u32(256);
         let send_to_table = syscall_code[2] + local.is_sys_linux;
 
+        builder.assert_bool(syscall_code[2]);
+        builder.assert_bool(local.is_sys_linux);
+        builder.assert_bool(send_to_table.clone());
+
         // SAFETY: Assert that for non real row, the send_to_table value is 0 so that the `send_syscall`
         // interaction is not activated.
         builder.when(AB::Expr::one() - local.is_real).assert_zero(send_to_table.clone());
-
-        // Compute whether this syscall is SYS_NOP.
-        let is_sys_nop = {
-            IsZeroOperation::<AB::F>::eval(
-                builder,
-                local.syscall_id - AB::Expr::from_canonical_u32(SyscallCode::SYS_NOP.syscall_id()),
-                local.is_sys_nop,
-                local.is_real.into(),
-            );
-            local.is_sys_nop.result
-        };
 
         builder.send_syscall(
             local.shard,
@@ -137,17 +130,7 @@ impl SyscallInstrsChip {
             syscall_id.clone(),
             local.op_b_value.reduce::<AB>(),
             local.op_c_value.reduce::<AB>(),
-            send_to_table - is_sys_nop,
-            LookupScope::Local,
-        );
-
-        builder.send_syscall(
-            local.shard,
-            local.clk,
-            local.syscall_id,
-            local.op_b_value.reduce::<AB>(),
-            local.op_c_value.reduce::<AB>(),
-            is_sys_nop,
+            send_to_table,
             LookupScope::Local,
         );
 
@@ -165,8 +148,14 @@ impl SyscallInstrsChip {
 
         builder
             .when(local.is_real)
-            .when_not(is_enter_unconstrained + is_sys_nop)
+            .when_not(is_enter_unconstrained)
             .assert_eq(local.syscall_id, syscall_id.clone());
+
+        // The syscall_id should be EXIT_UNCONSTRAINED when is_enter_unconstrained is true.
+        builder.when(local.is_real).when(is_enter_unconstrained).assert_eq(
+            local.syscall_id,
+            AB::Expr::from_canonical_u32(SyscallCode::EXIT_UNCONSTRAINED.syscall_id()),
+        );
 
         // Compute whether this syscall is HINT_LEN.
         let is_hint_len = {
@@ -217,7 +206,7 @@ impl SyscallInstrsChip {
                     + local.is_commit_deferred_proofs.result),
         );
 
-        // Babybear range check the operand_to_check word.
+        // Koalabear range check the operand_to_check word.
         // SAFETY: `syscall_range_check_operand` is boolean, and no interactions can be made in padding rows.
         // `operand_to_check` is already known to be a valid word, as it is either
         // - `op_b_val` in the case of `HALT`
@@ -362,7 +351,7 @@ impl SyscallInstrsChip {
 
         // Verify that the is_halt flag is correct.
         // If `is_real = 0`, then `local.is_halt = 0`.
-        // If `is_real = 1`, then `is_halt_check.result` will be correct, so `local.is_halt` is correct.
+        // If `is_real = 1`, then `is_halt_check.result or is_exit_group_check.result` will be correct, so `local.is_halt` is correct.
         builder.assert_eq(local.is_halt, is_halt_or_exit_group * local.is_real);
     }
 
