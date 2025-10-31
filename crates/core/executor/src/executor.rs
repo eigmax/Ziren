@@ -309,7 +309,7 @@ impl<'a> Executor<'a> {
             local_memory_access: HashMap::new(),
             maximal_shapes: None,
             costs: costs.into_iter().map(|(k, v)| (k, v as u64)).collect(),
-            shape_check_frequency: 16,
+            shape_check_frequency: 64,
             lde_size_check: false,
             lde_size_threshold: 0,
         }
@@ -1931,12 +1931,10 @@ impl<'a> Executor<'a> {
         let memory = std::mem::take(&mut self.state.memory);
         let uninitialized_memory = std::mem::take(&mut self.state.uninitialized_memory);
         let proof_stream = std::mem::take(&mut self.state.proof_stream);
-        let input_stream = std::mem::take(&mut self.state.input_stream);
         let mut checkpoint = tracing::debug_span!("clone").in_scope(|| self.state.clone());
         self.state.memory = memory;
         self.state.uninitialized_memory = uninitialized_memory;
         self.state.proof_stream = proof_stream;
-        self.state.input_stream = input_stream;
 
         let done = tracing::debug_span!("execute").in_scope(|| self.execute())?;
         // Create a checkpoint using `memory_checkpoint`. Just include all memory if `done` since we
