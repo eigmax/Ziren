@@ -309,7 +309,7 @@ impl<'a> Executor<'a> {
             local_memory_access: HashMap::new(),
             maximal_shapes: None,
             costs: costs.into_iter().map(|(k, v)| (k, v as u64)).collect(),
-            shape_check_frequency: 256,
+            shape_check_frequency: 1024,
             lde_size_check: false,
             lde_size_threshold: 0,
         }
