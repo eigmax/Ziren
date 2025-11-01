@@ -93,8 +93,8 @@ fn main() {
         */
 
         // Read the program and stdin.
-        let elf = std::fs::read(path.clone() + "/reth").expect("failed to read program");
-        let stdin = std::fs::read(path.clone() + "/reth-stdin.bin").expect("failed to read stdin");
+        let elf = std::fs::read(path.clone() + "/program.bin").expect("failed to read program");
+        let stdin = std::fs::read(path.clone() + "/stdin.bin").expect("failed to read stdin");
         let stdin: ZKMStdin = bincode::deserialize(&stdin).expect("failed to deserialize stdin");
 
         // Collect the maximal shapes for each shard size.
