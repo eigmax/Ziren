@@ -138,6 +138,7 @@ where
     Com<SC>: Send + Sync,
     PcsProverData<SC>: Send + Sync,
 {
+    tracing::info!("opt: {:?}", opts);
     // Setup the runtime.
     let mut runtime = Executor::with_context(program.clone(), opts, context);
     runtime.maximal_shapes = shape_config.map(|config| {
