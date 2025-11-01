@@ -60,7 +60,7 @@ pub fn zkm_fri_config() -> FriConfig<InnerChallengeMmcs> {
         Ok(value) => value.parse().unwrap(),
         Err(_) => 84,
     };
-    FriConfig { log_blowup: 0, num_queries, proof_of_work_bits: 16, mmcs: challenge_mmcs }
+    FriConfig { log_blowup: 1, num_queries, proof_of_work_bits: 16, mmcs: challenge_mmcs }
 }
 
 /// The FRI config for inner recursion.
@@ -75,7 +75,7 @@ pub fn inner_fri_config() -> FriConfig<InnerChallengeMmcs> {
         Ok(value) => value.parse().unwrap(),
         Err(_) => 84,
     };
-    FriConfig { log_blowup: 0, num_queries, proof_of_work_bits: 16, mmcs: challenge_mmcs }
+    FriConfig { log_blowup: 1, num_queries, proof_of_work_bits: 16, mmcs: challenge_mmcs }
 }
 
 /// The recursion config used for recursive reduce circuit.
@@ -209,7 +209,7 @@ pub mod koala_bear_poseidon2 {
             Ok(value) => value.parse().unwrap(),
             Err(_) => 84,
         };
-        FriConfig { log_blowup: 0, num_queries, proof_of_work_bits: 16, mmcs: challenge_mmcs }
+        FriConfig { log_blowup: 1, num_queries, proof_of_work_bits: 16, mmcs: challenge_mmcs }
     }
 
     #[must_use]
@@ -223,7 +223,7 @@ pub mod koala_bear_poseidon2 {
             Ok(value) => value.parse().unwrap(),
             Err(_) => 42,
         };
-        FriConfig { log_blowup: 1, num_queries, proof_of_work_bits: 16, mmcs: challenge_mmcs }
+        FriConfig { log_blowup: 2, num_queries, proof_of_work_bits: 16, mmcs: challenge_mmcs }
     }
 
     #[must_use]
@@ -237,7 +237,7 @@ pub mod koala_bear_poseidon2 {
             Ok(value) => value.parse().unwrap(),
             Err(_) => 28,
         };
-        FriConfig { log_blowup: 2, num_queries, proof_of_work_bits: 16, mmcs: challenge_mmcs }
+        FriConfig { log_blowup: 3, num_queries, proof_of_work_bits: 16, mmcs: challenge_mmcs }
     }
 
     enum KoalaBearPoseidon2Type {
