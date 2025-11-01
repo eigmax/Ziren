@@ -143,6 +143,10 @@ where
     runtime.maximal_shapes = shape_config.map(|config| {
         config.maximal_core_shapes(opts.shard_size.ilog2() as usize).into_iter().collect()
     });
+
+    tracing::info!("shape size: {:?}", runtime.maximal_shapes.as_ref().map(|s| s.len()));
+    tracing::info!("shard size: {}", opts.shard_size);
+
     runtime.write_vecs(&stdin.buffer);
     for proof in stdin.proofs.iter() {
         let (proof, vk) = proof.clone();
