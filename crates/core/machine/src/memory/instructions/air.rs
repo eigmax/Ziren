@@ -89,7 +89,7 @@ where
             local.prev_a_val,
             local.is_sb + local.is_sh + local.is_sw + local.is_swl + local.is_swr,
             AB::Expr::one(),
-            AB::Expr::zero(),
+            AB::Expr::one(),
             AB::Expr::zero(),
             AB::Expr::one(),
             is_real,
