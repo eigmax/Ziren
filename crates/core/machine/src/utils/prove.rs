@@ -170,11 +170,11 @@ where
         let checkpoint_generator_handle: ScopedJoinHandle<Result<_, ZKMCoreProverError>> =
             s.spawn(move || {
                 let _span = checkpoint_generator_span.enter();
-                tracing::info_span!("checkpoint generator").in_scope(|| {
+                tracing::debug_span!("checkpoint generator").in_scope(|| {
                     let mut index = 0;
                     loop {
                         // Enter the span.
-                        let span = tracing::info_span!("batch");
+                        let span = tracing::debug_span!("batch");
                         let _span = span.enter();
 
                         // Execute the runtime until we reach a checkpoint.
