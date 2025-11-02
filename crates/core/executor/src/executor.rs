@@ -598,7 +598,7 @@ impl<'a> Executor<'a> {
 
         if position != MemoryAccessPosition::Memory {
             // If the position is not Memory, we are reading from a register.
-            log::debug!("pc: {:X} read register {}, {:X}", self.state.pc, addr, record.value);
+            log::trace!("pc: {:X} read register {}, {:X}", self.state.pc, addr, record.value);
         }
 
         // If we're not in unconstrained mode, record the access for the current cycle.
