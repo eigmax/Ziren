@@ -56,7 +56,7 @@ pub struct ExecutionRecord {
     pub branch_events: Vec<BranchEvent>,
     /// A trace of the jump events.
     pub jump_events: Vec<JumpEvent>,
-    /// A trace of the misc events.
+    /// A trace of the conditional move events.
     pub movcond_events: Vec<MovCondEvent>,
     /// A trace of the misc events.
     pub misc_events: Vec<MiscEvent>,

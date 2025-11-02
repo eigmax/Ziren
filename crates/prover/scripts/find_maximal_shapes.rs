@@ -183,7 +183,7 @@ fn collect_maximal_shapes(
     }
 
     // Use this to make sure we don't collect too many shapes that will just OOM out of the box.
-    if opts.shard_size == 1 << 22 {
+    if opts.shard_size == 1 << 23 {
         executor.lde_size_check = true;
         executor.lde_size_threshold = 14 * 1_000_000_000;
     }
