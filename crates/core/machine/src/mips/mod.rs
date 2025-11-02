@@ -33,7 +33,7 @@ pub(crate) mod mips_chips {
         control_flow::{BranchChip, JumpChip},
         cpu::CpuChip,
         memory::{MemoryGlobalChip, MemoryInstructionsChip},
-        misc::MiscInstrsChip,
+        misc::{MiscInstrsChip, MovCondChip},
         program::ProgramChip,
         syscall::{
             chip::SyscallChip,
@@ -103,6 +103,8 @@ pub enum MipsAir<F: PrimeField32> {
     Jump(JumpChip),
     /// An AIR for MIPS memory instructions.
     MemoryInstrs(MemoryInstructionsChip),
+    /// An AIR for MIPS mov condition instructions.
+    MovCond(MovCondChip),
     /// An AIR for MIPS misc instructions.
     MiscInstrs(MiscInstrsChip),
     /// An AIR for MIPS syscall instructions.
@@ -430,6 +432,10 @@ impl<F: PrimeField32> MipsAir<F> {
         costs.insert(sys_linux.name(), sys_linux.cost());
         chips.push(sys_linux);
 
+        let movcond_instrs = Chip::new(MipsAir::MovCond(MovCondChip::default()));
+        costs.insert(movcond_instrs.name(), movcond_instrs.cost());
+        chips.push(movcond_instrs);
+
         (chips, costs)
     }
 
@@ -444,6 +450,7 @@ impl<F: PrimeField32> MipsAir<F> {
             (MipsAirId::Cpu, record.cpu_events.len()),
             (MipsAirId::Branch, record.branch_events.len()),
             (MipsAirId::Jump, record.jump_events.len()),
+            (MipsAirId::MovCond, record.movcond_events.len()),
             (MipsAirId::MiscInstrs, record.misc_events.len()),
             (MipsAirId::MemoryInstrs, record.memory_instr_events.len()),
             (MipsAirId::SyscallInstrs, record.syscall_events.len()),
@@ -520,6 +527,7 @@ impl<F: PrimeField32> MipsAir<F> {
             MipsAir::Jump(JumpChip::default()),
             MipsAir::SyscallInstrs(SyscallInstrsChip::default()),
             MipsAir::MemoryInstrs(MemoryInstructionsChip::default()),
+            MipsAir::MovCond(MovCondChip::default()),
             MipsAir::MiscInstrs(MiscInstrsChip::default()),
             MipsAir::MemoryLocal(MemoryLocalChip::new()),
             MipsAir::Global(GlobalChip),
@@ -648,6 +656,7 @@ impl<F: PrimeField32> MipsAir<F> {
             Self::SyscallInstrs(_) => unreachable!("Invalid for core chip"),
             Self::MemoryInstrs(_) => unreachable!("Invalid for core chip"),
             Self::MiscInstrs(_) => unreachable!("Invalid for core chip"),
+            Self::MovCond(_) => unreachable!("Invalid for core chip"),
         }
     }
 }

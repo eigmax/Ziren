@@ -97,10 +97,47 @@ impl Instruction {
                 | Opcode::MSUB
         )
     }
+
+    /// Returns if the instruction is an mov condition instruction.
+    #[must_use]
+    pub const fn is_mov_cond_instruction(&self) -> bool {
+        matches!(
+            self.opcode,
+            Opcode::MEQ
+                | Opcode::MNE
+        )
+    }
+
     /// Returns if the instruction is a syscall instruction.
     #[must_use]
     pub fn is_syscall_instruction(&self) -> bool {
         self.opcode == Opcode::SYSCALL
+    }
+
+    #[must_use]
+    pub fn is_check_memory_instruction(&self) -> bool {
+        matches!(
+            self.opcode,
+            Opcode::SYSCALL
+                | Opcode::MADDU
+                | Opcode::MSUBU
+                | Opcode::MADD
+                | Opcode::MSUB
+                | Opcode::LH
+                | Opcode::LWL
+                | Opcode::LW
+                | Opcode::LBU
+                | Opcode::LHU
+                | Opcode::LWR
+                | Opcode::SB
+                | Opcode::SH
+                | Opcode::SWL
+                | Opcode::SW
+                | Opcode::SWR
+                | Opcode::LL
+                | Opcode::SC
+                | Opcode::LB
+        )
     }
 
     #[must_use]

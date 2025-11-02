@@ -67,7 +67,7 @@ where
             local.prev_a_value,
             AB::Expr::zero(),
             AB::Expr::one(),
-            AB::Expr::zero(),
+            AB::Expr::one(),
             local.is_halt,
             is_sequential,
             local.is_real,
