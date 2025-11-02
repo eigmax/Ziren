@@ -1114,7 +1114,7 @@ impl<'a> Executor<'a> {
                 b = self.rr(Register::A0, MemoryAccessPosition::B);
                 let syscall = SyscallCode::from_u32(syscall_id);
                 let mut prev_a = syscall_id;
-                log::debug!(
+                log::trace!(
                     "pc: {:X} syscall {}, a0: {:X}, a1: {:X}",
                     self.state.pc,
                     syscall_id,
