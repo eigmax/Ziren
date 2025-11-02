@@ -5,7 +5,7 @@ use p3_koala_bear::KoalaBear;
 use crate::{events::NUM_LOCAL_MEMORY_ENTRIES_PER_ROW_EXEC, MipsAirId, Opcode};
 
 const BYTE_NUM_ROWS: u64 = 1 << 16;
-const MAX_PROGRAM_SIZE: u64 = 1 << 22;
+const MAX_PROGRAM_SIZE: u64 = 1 << 23;
 
 /// Estimates the LDE area.
 #[must_use]

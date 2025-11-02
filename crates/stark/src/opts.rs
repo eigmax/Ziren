@@ -3,10 +3,10 @@ use std::env;
 use serde::{Deserialize, Serialize};
 use sysinfo::System;
 
-const MAX_SHARD_SIZE: usize = 1 << 22;
+const MAX_SHARD_SIZE: usize = 1 << 23;
 const RECURSION_MAX_SHARD_SIZE: usize = 1 << 22;
 const MAX_SHARD_BATCH_SIZE: usize = 8;
-const DEFAULT_TRACE_GEN_WORKERS: usize = 8;
+const DEFAULT_TRACE_GEN_WORKERS: usize = 1;
 const DEFAULT_CHECKPOINTS_CHANNEL_CAPACITY: usize = 128;
 const DEFAULT_RECORDS_AND_TRACES_CHANNEL_CAPACITY: usize = 1;
 
@@ -79,7 +79,7 @@ impl ZKMProverOpts {
 
     /// Get the default prover options for a prover on GPU given the amount of CPU and GPU memory.
     #[must_use]
-    pub fn gpu(cpu_ram_gb: usize, gpu_ram_gb: usize) -> Self {
+    pub fn gpu(_cpu_ram_gb: usize, gpu_ram_gb: usize) -> Self {
         let mut opts = ZKMProverOpts::default();
 
         // Set the core options.
@@ -126,6 +126,8 @@ pub struct ZKMCoreOpts {
     pub checkpoints_channel_capacity: usize,
     /// The capacity of the channel for records and traces.
     pub records_and_traces_channel_capacity: usize,
+    /// The stride to check the shape validity.
+    pub shape_check_frequency: u64,
 }
 
 impl Default for ZKMCoreOpts {
@@ -157,6 +159,8 @@ impl Default for ZKMCoreOpts {
                     |_| DEFAULT_RECORDS_AND_TRACES_CHANNEL_CAPACITY,
                     |s| s.parse::<usize>().unwrap_or(DEFAULT_RECORDS_AND_TRACES_CHANNEL_CAPACITY),
                 ),
+            shape_check_frequency: env::var("SHAPE_CHECK_FREQUENCY")
+                .map_or_else(|_| 16, |s| s.parse::<u64>().unwrap_or(16)),
             reconstruct_commitments: true,
         };
 
@@ -219,6 +223,8 @@ impl ZKMCoreOpts {
                     |_| DEFAULT_RECORDS_AND_TRACES_CHANNEL_CAPACITY,
                     |s| s.parse::<usize>().unwrap_or(DEFAULT_RECORDS_AND_TRACES_CHANNEL_CAPACITY),
                 ),
+            shape_check_frequency: env::var("SHAPE_CHECK_FREQUENCY")
+                .map_or_else(|_| 16, |s| s.parse::<u64>().unwrap_or(16)),
             reconstruct_commitments: true,
         }
     }

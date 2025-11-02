@@ -138,15 +138,11 @@ where
     Com<SC>: Send + Sync,
     PcsProverData<SC>: Send + Sync,
 {
-    tracing::info!("opt: {:?}", opts);
     // Setup the runtime.
     let mut runtime = Executor::with_context(program.clone(), opts, context);
     runtime.maximal_shapes = shape_config.map(|config| {
         config.maximal_core_shapes(opts.shard_size.ilog2() as usize).into_iter().collect()
     });
-
-    tracing::info!("shape size: {:?}", runtime.maximal_shapes.as_ref().map(|s| s.len()));
-    tracing::info!("shard size: {}", opts.shard_size);
 
     runtime.write_vecs(&stdin.buffer);
     for proof in stdin.proofs.iter() {

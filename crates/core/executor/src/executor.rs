@@ -35,7 +35,7 @@ use crate::{
 };
 
 /// The maximum number of instructions in a program.
-pub const MAX_PROGRAM_SIZE: usize = 1 << 22;
+pub const MAX_PROGRAM_SIZE: usize = 1 << 23;
 
 /// The costs for the airs.
 pub const MIPS_COSTS: &str = include_str!("./artifacts/mips_costs.json");
@@ -309,7 +309,7 @@ impl<'a> Executor<'a> {
             local_memory_access: HashMap::new(),
             maximal_shapes: None,
             costs: costs.into_iter().map(|(k, v)| (k, v as u64)).collect(),
-            shape_check_frequency: 1024,
+            shape_check_frequency: opts.shape_check_frequency,
             lde_size_check: false,
             lde_size_threshold: 0,
         }
