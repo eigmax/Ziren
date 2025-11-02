@@ -49,8 +49,8 @@ pub struct CpuCols<T: Copy> {
     /// Whether the instruction will read and write a register.
     pub is_rw_a: T,
 
-    /// Whether the instruction will write (not read) HI register.
-    pub is_write_hi: T,
+    /// Whether the instruction chip will check memory access.
+    pub is_check_memory: T,
 
     /// Whether this is a halt instruction.
     pub is_halt: T,

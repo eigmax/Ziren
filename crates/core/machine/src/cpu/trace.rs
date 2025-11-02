@@ -126,7 +126,7 @@ impl CpuChip {
         );
 
         cols.is_rw_a = F::from_bool(instruction.is_rw_a_instruction());
-        cols.is_write_hi = F::from_bool(instruction.is_mult_div_instruction());
+        cols.is_check_memory = F::from_bool(instruction.is_mult_div_instruction() || instruction.is_check_memory_instruction());
 
         cols.op_a_value = event.a.into();
         if let Some(hi) = event.hi {
@@ -138,13 +138,13 @@ impl CpuChip {
         *cols.op_c_access.value_mut() = event.c.into();
 
         cols.shard_to_send =
-            if instruction.is_rw_a_instruction() || instruction.is_mult_div_instruction() {
+            if instruction.is_check_memory_instruction() || instruction.is_mult_div_instruction() {
                 cols.shard
             } else {
                 F::ZERO
             };
         cols.clk_to_send =
-            if instruction.is_rw_a_instruction() || instruction.is_mult_div_instruction() {
+            if instruction.is_check_memory_instruction() || instruction.is_mult_div_instruction() {
                 F::from_canonical_u32(event.clk)
             } else {
                 F::ZERO

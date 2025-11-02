@@ -582,6 +582,9 @@ fn derive_cluster_from_maximal_shape(shape: &Shape<MipsAirId>) -> ShapeCluster<M
     let memory_log_height = shape.log2_height(&MipsAirId::MemoryInstrs);
     maybe_log2_heights.insert(MipsAirId::MemoryInstrs, heuristic(memory_log_height, 0));
 
+    let movcond_log_height = shape.log2_height(&MipsAirId::MovCond);
+    maybe_log2_heights.insert(MipsAirId::MovCond, heuristic(movcond_log_height, 0));
+
     let misc_log_height = shape.log2_height(&MipsAirId::MiscInstrs);
     maybe_log2_heights.insert(MipsAirId::MiscInstrs, heuristic(misc_log_height, 0));
 
