@@ -38,8 +38,8 @@ fn main() {
         for shape in shapes.iter() {
             for log2_memory_height in args.log2_memory_heights.iter() {
                 let mut small_shape = shape.clone();
-                let log2_gap_from_22 = 23 - small_shape.log2_height(&MipsAirId::Cpu).unwrap();
-                let min_log2_height_threshold = 16 - log2_gap_from_22;
+                let log2_gap_from_23 = 23 - small_shape.log2_height(&MipsAirId::Cpu).unwrap();
+                let min_log2_height_threshold = 16 - log2_gap_from_23;
                 for air in MipsAirId::core() {
                     let current_log2_height =
                         small_shape.log2_height(&air.clone()).unwrap_or_default();
