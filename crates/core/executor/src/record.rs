@@ -15,8 +15,8 @@ use crate::{
     events::{
         AluEvent, BranchEvent, ByteLookupEvent, ByteRecord, CompAluEvent, CpuEvent,
         GlobalLookupEvent, JumpEvent, MemInstrEvent, MemoryInitializeFinalizeEvent,
-        MemoryLocalEvent, MemoryRecordEnum, MiscEvent, PrecompileEvent, PrecompileEvents,
-        SyscallEvent,
+        MemoryLocalEvent, MemoryRecordEnum, MiscEvent, MovCondEvent, PrecompileEvent,
+        PrecompileEvents, SyscallEvent,
     },
     syscalls::{precompiles::keccak::sponge::GENERAL_BLOCK_SIZE_U32S, SyscallCode},
     MipsAirId, Program,
@@ -56,6 +56,8 @@ pub struct ExecutionRecord {
     pub branch_events: Vec<BranchEvent>,
     /// A trace of the jump events.
     pub jump_events: Vec<JumpEvent>,
+    /// A trace of the conditional move events.
+    pub movcond_events: Vec<MovCondEvent>,
     /// A trace of the misc events.
     pub misc_events: Vec<MiscEvent>,
     /// A trace of the byte lookups that are needed.

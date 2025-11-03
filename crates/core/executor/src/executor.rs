@@ -21,7 +21,7 @@ use crate::{
     events::{
         AluEvent, BranchEvent, CompAluEvent, CpuEvent, JumpEvent, MemInstrEvent,
         MemoryAccessPosition, MemoryInitializeFinalizeEvent, MemoryLocalEvent, MemoryReadRecord,
-        MemoryRecord, MemoryRecordEnum, MemoryWriteRecord, MiscEvent, SyscallEvent,
+        MemoryRecord, MemoryRecordEnum, MemoryWriteRecord, MiscEvent, MovCondEvent, SyscallEvent,
     },
     hook::{HookEnv, HookRegistry},
     memory::{Entry, PagedMemory},
@@ -598,7 +598,7 @@ impl<'a> Executor<'a> {
 
         if position != MemoryAccessPosition::Memory {
             // If the position is not Memory, we are reading from a register.
-            log::debug!("pc: {:X} read register {}, {:X}", self.state.pc, addr, record.value);
+            log::trace!("pc: {:X} read register {}, {:X}", self.state.pc, addr, record.value);
         }
 
         // If we're not in unconstrained mode, record the access for the current cycle.
@@ -706,7 +706,6 @@ impl<'a> Executor<'a> {
             self.emit_misc_event(
                 clk,
                 instruction.opcode,
-                instruction.op_a,
                 a,
                 b,
                 c,
@@ -893,33 +892,37 @@ impl<'a> Executor<'a> {
         &mut self,
         clk: u32,
         opcode: Opcode,
-        op_a: u8,
         a: u32,
         b: u32,
         c: u32,
         prev_a: u32,
         hi_record: Option<MemoryRecordEnum>,
     ) {
-        let hi_access = match hi_record {
-            Some(MemoryRecordEnum::Write(record)) => record,
-            _ => MemoryWriteRecord::default(),
-        };
+        if matches!(opcode, Opcode::MNE | Opcode::MEQ | Opcode::WSBH) {
+            let event =
+                MovCondEvent::new(self.state.pc, self.state.next_pc, opcode, a, b, c, prev_a);
+            self.record.movcond_events.push(event);
+        } else {
+            let hi_access = match hi_record {
+                Some(MemoryRecordEnum::Write(record)) => record,
+                _ => MemoryWriteRecord::default(),
+            };
 
-        let event = MiscEvent::new(
-            clk,
-            self.shard(),
-            self.state.pc,
-            self.state.next_pc,
-            opcode,
-            op_a,
-            a,
-            b,
-            c,
-            prev_a,
-            hi_access,
-        );
-        self.record.misc_events.push(event);
-        emit_misc_dependencies(self, event);
+            let event = MiscEvent::new(
+                clk,
+                self.shard(),
+                self.state.pc,
+                self.state.next_pc,
+                opcode,
+                a,
+                b,
+                c,
+                prev_a,
+                hi_access,
+            );
+            self.record.misc_events.push(event);
+            emit_misc_dependencies(self, event);
+        }
     }
 
     #[inline]
@@ -1114,7 +1117,7 @@ impl<'a> Executor<'a> {
                 b = self.rr(Register::A0, MemoryAccessPosition::B);
                 let syscall = SyscallCode::from_u32(syscall_id);
                 let mut prev_a = syscall_id;
-                log::debug!(
+                log::trace!(
                     "pc: {:X} syscall {}, a0: {:X}, a1: {:X}",
                     self.state.pc,
                     syscall_id,

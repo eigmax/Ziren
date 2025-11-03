@@ -139,19 +139,19 @@ impl<V: Copy> PagedMemory<V> {
 
     /// Clears the page table. Drops all `Page`s, but retains the memory used by the table itself.
     pub fn clear(&mut self) {
-        self.page_table.clear();
+        self.page_table.truncate(0);
         self.index.fill(NO_PAGE);
     }
 
     /// Break apart an address into an upper and lower index.
-    #[inline]
+    #[inline(always)]
     const fn indices(addr: u32) -> (usize, usize) {
         let index = Self::compress_addr(addr);
         (index >> LOG_PAGE_LEN, index & PAGE_MASK)
     }
 
     /// Compress an address from the sparse address space to a contiguous space.
-    #[inline]
+    #[inline(always)]
     const fn compress_addr(addr: u32) -> usize {
         let addr = addr as usize;
         if addr < NUM_REGISTERS {
@@ -162,7 +162,7 @@ impl<V: Copy> PagedMemory<V> {
     }
 
     /// Decompress an address from a contiguous space to the sparse address space.
-    #[inline]
+    #[inline(always)]
     const fn decompress_addr(addr: usize) -> u32 {
         if addr < NUM_REGISTERS {
             addr as u32

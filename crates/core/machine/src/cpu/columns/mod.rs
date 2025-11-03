@@ -46,14 +46,11 @@ pub struct CpuCols<T: Copy> {
     /// The number of extra cycles to add to the clk for a syscall instruction.
     pub num_extra_cycles: T,
 
-    /// Whether this is a memory instruction.
-    pub is_memory: T,
-
     /// Whether the instruction will read and write a register.
     pub is_rw_a: T,
 
-    /// Whether the instruction will write (not read) HI register.
-    pub is_write_hi: T,
+    /// Whether the instruction chip will check memory access.
+    pub is_check_memory: T,
 
     /// Whether this is a halt instruction.
     pub is_halt: T,

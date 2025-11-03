@@ -13,6 +13,9 @@ pub struct SextCols<T> {
     /// The most significant byte.
     pub sig_byte: T,
 
+    /// Indicator whether operand a equals operand b. Used by teq
+    pub a_eq_b: T,
+
     /// SEB/SEH Instruction Selectors.
     pub is_seb: T,
     pub is_seh: T,

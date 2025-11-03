@@ -3,10 +3,10 @@ use std::env;
 use serde::{Deserialize, Serialize};
 use sysinfo::System;
 
-const MAX_SHARD_SIZE: usize = 1 << 21;
+const MAX_SHARD_SIZE: usize = 1 << 22;
 const RECURSION_MAX_SHARD_SIZE: usize = 1 << 22;
 const MAX_SHARD_BATCH_SIZE: usize = 8;
-const DEFAULT_TRACE_GEN_WORKERS: usize = 1;
+const DEFAULT_TRACE_GEN_WORKERS: usize = 8;
 const DEFAULT_CHECKPOINTS_CHANNEL_CAPACITY: usize = 128;
 const DEFAULT_RECORDS_AND_TRACES_CHANNEL_CAPACITY: usize = 1;
 
@@ -45,7 +45,7 @@ impl ZKMProverOpts {
             33..49 => (20, 1, 2),
             49..65 => (21, 1, 3),
             65..81 => (21, 3, 1),
-            81.. => (21, 4, 1),
+            81.. => (22, 4, 1),
         }
     }
 
@@ -79,25 +79,25 @@ impl ZKMProverOpts {
 
     /// Get the default prover options for a prover on GPU given the amount of CPU and GPU memory.
     #[must_use]
-    pub fn gpu(cpu_ram_gb: usize, gpu_ram_gb: usize) -> Self {
+    pub fn gpu(_cpu_ram_gb: usize, gpu_ram_gb: usize) -> Self {
         let mut opts = ZKMProverOpts::default();
 
         // Set the core options.
         if 24 <= gpu_ram_gb {
-            let log2_shard_size = 21;
-            opts.core_opts.shard_size = 1 << log2_shard_size;
+            //let log2_shard_size = 21;
+            //opts.core_opts.shard_size = 1 << log2_shard_size;
             opts.core_opts.shard_batch_size = 1;
 
-            let log2_deferred_threshold = 14;
-            opts.core_opts.split_opts = SplitOpts::new(1 << log2_deferred_threshold);
+            //let log2_deferred_threshold = 14;
+            //opts.core_opts.split_opts = SplitOpts::new(1 << log2_deferred_threshold);
 
-            opts.core_opts.records_and_traces_channel_capacity = 4;
-            opts.core_opts.trace_gen_workers = 4;
+            //opts.core_opts.records_and_traces_channel_capacity = 4;
+            //opts.core_opts.trace_gen_workers = 4;
 
-            if cpu_ram_gb <= 20 {
-                opts.core_opts.records_and_traces_channel_capacity = 1;
-                opts.core_opts.trace_gen_workers = 2;
-            }
+            //if cpu_ram_gb <= 20 {
+            //    opts.core_opts.records_and_traces_channel_capacity = 1;
+            //    opts.core_opts.trace_gen_workers = 2;
+            //}
         } else {
             unreachable!("not enough gpu memory");
         }
