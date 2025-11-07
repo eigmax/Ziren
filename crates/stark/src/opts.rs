@@ -3,8 +3,8 @@ use std::env;
 use serde::{Deserialize, Serialize};
 use sysinfo::System;
 
-const MAX_SHARD_SIZE: usize = 1 << 22;
-const RECURSION_MAX_SHARD_SIZE: usize = 1 << 22;
+const MAX_SHARD_SIZE: usize = 1 << 21;
+const RECURSION_MAX_SHARD_SIZE: usize = 1 << 21;
 const MAX_SHARD_BATCH_SIZE: usize = 8;
 const DEFAULT_TRACE_GEN_WORKERS: usize = 1;
 const DEFAULT_CHECKPOINTS_CHANNEL_CAPACITY: usize = 128;
