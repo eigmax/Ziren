@@ -8991,7 +8991,6 @@ dependencies = [
  "static_assertions",
  "strum",
  "strum_macros",
- "tempfile",
  "thiserror 1.0.69",
  "tiny-keccak",
  "tracing",
