@@ -1,8 +1,5 @@
 use std::{
-    fs::File,
-    io::{BufWriter, Write},
-    str::FromStr,
-    sync::Arc,
+    fs::File, io::{BufWriter, Write}, str::FromStr, sync::Arc
 };
 
 use enum_map::EnumMap;
@@ -615,6 +612,48 @@ impl<'a> Executor<'a> {
         record.value
     }
 
+        /// Read from memory, assuming that all addresses are aligned.
+    #[inline]
+    pub fn mr_cpu_non_trace(&mut self, addr: u32) -> u32 {
+
+        // Get the memory record entry.
+        let entry = self.state.memory.entry(addr);
+        if self.executor_mode == ExecutorMode::Checkpoint || self.unconstrained {
+            match entry {
+                Entry::Occupied(ref entry) => {
+                    let record = entry.get();
+                    self.memory_checkpoint.entry(addr).or_insert_with(|| Some(*record));
+                }
+                Entry::Vacant(_) => {
+                    self.memory_checkpoint.entry(addr).or_insert(None);
+                }
+            }
+        }
+
+        // If we're in unconstrained mode, we don't want to modify state, so we'll save the
+        // original state if it's the first time modifying it.
+        if self.unconstrained {
+            let record = match entry {
+                Entry::Occupied(ref entry) => Some(entry.get()),
+                Entry::Vacant(_) => None,
+            };
+            self.unconstrained_state.memory_diff.entry(addr).or_insert(record.copied());
+        }
+
+        // If it's the first time accessing this address, initialize previous values.
+        let record: &mut MemoryRecord = match entry {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                // If addr has a specific value to be initialized with, use that, otherwise 0.
+                let value = self.state.uninitialized_memory.get(addr).unwrap_or(&0);
+                self.uninitialized_memory_checkpoint.entry(addr).or_insert_with(|| *value != 0);
+                entry.insert(MemoryRecord { value: *value, shard: 0, timestamp: 0 })
+            }
+        };
+
+        record.value
+    }
+
     /// Write to memory.
     ///
     /// # Panics
@@ -660,7 +699,7 @@ impl<'a> Executor<'a> {
     #[inline]
     pub fn rr(&mut self, register: Register, position: MemoryAccessPosition) -> u32 {
         if self.executor_mode != ExecutorMode::Trace {
-            self.register(register)
+            self.mr_cpu_non_trace(register as u32)
         } else {
             self.mr_cpu(register as u32, position)
         }
