@@ -71,10 +71,8 @@ impl<F: PrimeField32> MachineAir<F> for AddSubChip {
     }
 
     fn num_rows(&self, input: &Self::Record) -> Option<usize> {
-        let nb_rows = next_power_of_two(
-            input.add_events.len() + input.sub_events.len(),
-            input.fixed_log2_rows::<F, _>(self),
-        );
+        let nb_rows =
+            next_power_of_two(input.add_events.len(), input.fixed_log2_rows::<F, _>(self));
         Some(nb_rows)
     }
 
@@ -84,10 +82,7 @@ impl<F: PrimeField32> MachineAir<F> for AddSubChip {
         _: &mut ExecutionRecord,
     ) -> RowMajorMatrix<F> {
         // Generate the rows for the trace.
-        let chunk_size =
-            std::cmp::max((input.add_events.len() + input.sub_events.len()) / num_cpus::get(), 1);
-        let merged_events =
-            input.add_events.iter().chain(input.sub_events.iter()).collect::<Vec<_>>();
+        let chunk_size = std::cmp::max(input.add_events.len() / num_cpus::get(), 1);
         let padded_nb_rows = <AddSubChip as MachineAir<F>>::num_rows(self, input).unwrap();
         let mut values = zeroed_f_vec(padded_nb_rows * NUM_ADD_SUB_COLS);
 
@@ -97,9 +92,9 @@ impl<F: PrimeField32> MachineAir<F> for AddSubChip {
                     let idx = i * chunk_size + j;
                     let cols: &mut AddSubCols<F> = row.borrow_mut();
 
-                    if idx < merged_events.len() {
+                    if idx < input.add_events.len() {
                         let mut byte_lookup_events = Vec::new();
-                        let event = &merged_events[idx];
+                        let event = &input.add_events[idx];
                         self.event_to_row(event, cols, &mut byte_lookup_events);
                     }
                 });
@@ -111,13 +106,11 @@ impl<F: PrimeField32> MachineAir<F> for AddSubChip {
     }
 
     fn generate_dependencies(&self, input: &Self::Record, output: &mut Self::Record) {
-        let chunk_size =
-            std::cmp::max((input.add_events.len() + input.sub_events.len()) / num_cpus::get(), 1);
+        let chunk_size = std::cmp::max(input.add_events.len() / num_cpus::get(), 1);
 
-        let event_iter =
-            input.add_events.chunks(chunk_size).chain(input.sub_events.chunks(chunk_size));
-
-        let blu_batches = event_iter
+        let blu_batches = input
+            .add_events
+            .chunks(chunk_size)
             .par_bridge()
             .map(|events| {
                 let mut blu: HashMap<ByteLookupEvent, usize> = HashMap::new();
@@ -352,11 +345,10 @@ mod tests {
 
         type F = KoalaBear;
 
-        let chunk_size =
-            std::cmp::max((input.add_events.len() + input.sub_events.len()) / num_cpus::get(), 1);
+        let chunk_size = std::cmp::max(input.add_events.len() / num_cpus::get(), 1);
 
-        let events = input.add_events.iter().chain(input.sub_events.iter()).collect::<Vec<_>>();
-        let row_batches = events
+        let row_batches = inputs
+            .add_events
             .par_chunks(chunk_size)
             .map(|events| {
                 let rows = events

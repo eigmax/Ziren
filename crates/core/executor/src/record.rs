@@ -32,12 +32,10 @@ pub struct ExecutionRecord {
     pub program: Arc<Program>,
     /// A trace of the CPU events which get emitted during execution.
     pub cpu_events: Vec<CpuEvent>,
-    /// A trace of the ADD, ADDU, ADDI and ADDIU events.
+    /// A trace of the ADD, ADDU, ADDI, ADDIU, SUB and SUBU events.
     pub add_events: Vec<AluEvent>,
     /// A trace of the MUL, MULT and MULTU events.
     pub mul_events: Vec<CompAluEvent>,
-    /// A trace of the SUB and SUBU events.
-    pub sub_events: Vec<AluEvent>,
     /// A trace of the XOR, OR, AND and NOR events.
     pub bitwise_events: Vec<AluEvent>,
     /// A trace of the SLL and SLLV events.
@@ -86,7 +84,10 @@ impl ExecutionRecord {
     /// Create a new [`ExecutionRecord`].
     #[must_use]
     pub fn new(program: Arc<Program>) -> Self {
-        Self { program, ..Default::default() }
+        let cpu_events = Vec::with_capacity(1 << 22);
+        let add_events = Vec::with_capacity(1 << 22);
+        let memory_instr_events = Vec::with_capacity(1 << 21);
+        Self { program, cpu_events, memory_instr_events, add_events, ..Default::default() }
     }
 
     /// Add a mul event to the execution record.
@@ -155,7 +156,6 @@ impl ExecutionRecord {
             } else {
                 let chunks = events.chunks_exact(threshold);
                 let remainder = chunks.remainder().to_vec();
-
                 for chunk in chunks {
                     let mut record = ExecutionRecord::new(self.program.clone());
                     record.precompile_events.insert(syscall_code, chunk.to_vec());
@@ -289,7 +289,6 @@ impl MachineRecord for ExecutionRecord {
         stats.insert("cpu_events".to_string(), self.cpu_events.len());
         stats.insert("add_events".to_string(), self.add_events.len());
         stats.insert("mul_events".to_string(), self.mul_events.len());
-        stats.insert("sub_events".to_string(), self.sub_events.len());
         stats.insert("bitwise_events".to_string(), self.bitwise_events.len());
         stats.insert("shift_left_events".to_string(), self.shift_left_events.len());
         stats.insert("shift_right_events".to_string(), self.shift_right_events.len());
@@ -325,7 +324,6 @@ impl MachineRecord for ExecutionRecord {
     fn append(&mut self, other: &mut ExecutionRecord) {
         self.cpu_events.append(&mut other.cpu_events);
         self.add_events.append(&mut other.add_events);
-        self.sub_events.append(&mut other.sub_events);
         self.mul_events.append(&mut other.mul_events);
         self.bitwise_events.append(&mut other.bitwise_events);
         self.shift_left_events.append(&mut other.shift_left_events);

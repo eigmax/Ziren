@@ -794,11 +794,8 @@ impl<'a> Executor<'a> {
         };
 
         match opcode {
-            Opcode::ADD => {
+            Opcode::ADD | Opcode::SUB => {
                 self.record.add_events.push(event);
-            }
-            Opcode::SUB => {
-                self.record.sub_events.push(event);
             }
             Opcode::XOR | Opcode::OR | Opcode::AND | Opcode::NOR => {
                 self.record.bitwise_events.push(event);
@@ -1905,6 +1902,7 @@ impl<'a> Executor<'a> {
     /// # Errors
     ///
     /// This function will return an error if the program execution fails.
+    #[tracing::instrument(name = "execute_record", level = "debug", skip_all)]
     pub fn execute_record(
         &mut self,
         emit_global_memory_events: bool,
@@ -1922,6 +1920,7 @@ impl<'a> Executor<'a> {
     /// # Errors
     ///
     /// This function will return an error if the program execution fails.
+    #[tracing::instrument(name = "execute_state", level = "debug", skip_all)]
     pub fn execute_state(
         &mut self,
         emit_global_memory_events: bool,
@@ -2025,6 +2024,7 @@ impl<'a> Executor<'a> {
 
     /// Executes up to `self.shard_batch_size` cycles of the program, returning whether the program
     /// has finished.
+    #[tracing::instrument(name = "execute", level = "debug", skip_all)]
     pub fn execute(&mut self) -> Result<bool, ExecutionError> {
         // Get the program.
         let program = self.program.clone();
@@ -2181,6 +2181,7 @@ impl<'a> Executor<'a> {
         }
     }
 
+    #[inline(always)]
     fn get_syscall(&mut self, code: SyscallCode) -> Option<&Arc<dyn Syscall>> {
         self.syscall_map.get(&code)
     }
