@@ -590,6 +590,7 @@ impl<'a> Executor<'a> {
     }
 
     /// Read from memory, assuming that all addresses are aligned.
+    #[inline]
     pub fn mr_cpu(&mut self, addr: u32, position: MemoryAccessPosition) -> u32 {
         // Assert that the address is aligned.
         assert_valid_memory_access!(addr, position);
@@ -620,6 +621,7 @@ impl<'a> Executor<'a> {
     ///
     /// This function will panic if the address is not aligned or if the memory accesses are already
     /// initialized.
+    #[inline]
     pub fn mw_cpu(&mut self, addr: u32, value: u32, position: MemoryAccessPosition) {
         // Assert that the address is aligned.
         assert_valid_memory_access!(addr, position);
@@ -655,11 +657,17 @@ impl<'a> Executor<'a> {
     }
 
     /// Read from a register.
+    #[inline]
     pub fn rr(&mut self, register: Register, position: MemoryAccessPosition) -> u32 {
-        self.mr_cpu(register as u32, position)
+        if self.executor_mode != ExecutorMode::Trace {
+            self.register(register)
+        } else {
+            self.mr_cpu(register as u32, position)
+        }
     }
 
     /// Write to a register A or AH
+    #[inline]
     pub fn rw(&mut self, register: Register, value: u32, position: MemoryAccessPosition) {
         // The only time we are writing to a register is when it is in operand A or AH.
         debug_assert!([MemoryAccessPosition::A, MemoryAccessPosition::HI].contains(&position));
