@@ -29,15 +29,15 @@ impl Syscall for SysFcntlSyscall {
             match a0 {
                 FD_STDIN => {
                     v0 = 0; // O_RDONLY
-                    rt.mw(Register::A3 as u32, 0)
+                    rt.rw_traced(Register::A3, 0)
                 }
                 FD_STDOUT | FD_STDERR => {
                     v0 = 1; // O_WRONLY
-                    rt.mw(Register::A3 as u32, 0)
+                    rt.rw_traced(Register::A3, 0)
                 }
                 _ => {
                     v0 = 0xffffffff;
-                    rt.mw(Register::A3 as u32, MIPS_EBADF)
+                    rt.rw_traced(Register::A3, MIPS_EBADF)
                 }
             }
         } else if a1 == 1 {
@@ -45,16 +45,16 @@ impl Syscall for SysFcntlSyscall {
             match a0 {
                 FD_STDIN | FD_STDOUT | FD_STDERR => {
                     v0 = a0;
-                    rt.mw(Register::A3 as u32, 0)
+                    rt.rw_traced(Register::A3, 0)
                 }
                 _ => {
                     v0 = 0xffffffff;
-                    rt.mw(Register::A3 as u32, MIPS_EBADF)
+                    rt.rw_traced(Register::A3, MIPS_EBADF)
                 }
             }
         } else {
             v0 = 0xffffffff;
-            rt.mw(Register::A3 as u32, MIPS_EBADF)
+            rt.rw_traced(Register::A3, MIPS_EBADF)
         };
 
         let shard = rt.current_shard();

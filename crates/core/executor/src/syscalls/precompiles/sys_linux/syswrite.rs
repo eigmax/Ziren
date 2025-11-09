@@ -22,7 +22,7 @@ impl Syscall for SysWriteSyscall {
     ) -> Option<u32> {
         let start_clk = rt.clk;
         let a2 = Register::A2;
-        let (record, v0) = rt.mr(a2 as u32);
+        let (record, v0) = rt.rr_traced(a2);
         let fd = a0;
         let write_buf = a1;
         let nbytes = v0;
@@ -30,7 +30,7 @@ impl Syscall for SysWriteSyscall {
         let slice = bytes.as_slice();
         write_fd(rt, fd, slice);
 
-        let a3_record = rt.mw(Register::A3 as u32, 0);
+        let a3_record = rt.rw_traced(Register::A3, 0);
         let shard = rt.current_shard();
         let event = PrecompileEvent::Linux(LinuxEvent {
             shard,

@@ -28,8 +28,8 @@ impl Syscall for U256xU2048MulSyscall {
         let a_ptr = arg1;
         let b_ptr = arg2;
 
-        let (lo_ptr_memory, lo_ptr) = rt.mr(A2 as u32);
-        let (hi_ptr_memory, hi_ptr) = rt.mr(A3 as u32);
+        let (lo_ptr_memory, lo_ptr) = rt.rr_traced(A2);
+        let (hi_ptr_memory, hi_ptr) = rt.rr_traced(A3);
 
         let (a_memory_records, a) = rt.mr_slice(a_ptr, U256_NUM_WORDS);
         let (b_memory_records, b) = rt.mr_slice(b_ptr, U2048_NUM_WORDS);
