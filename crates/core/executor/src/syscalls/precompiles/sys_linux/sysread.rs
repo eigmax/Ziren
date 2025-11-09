@@ -25,9 +25,9 @@ impl Syscall for SysReadSyscall {
         let mut v0 = 0;
         let a3_record = if fd != FD_STDIN {
             v0 = 0xffffffff; // Return error for non-stdin reads.
-            rt.mw(Register::A3 as u32, MIPS_EBADF)
+            rt.rw_traced(Register::A3, MIPS_EBADF)
         } else {
-            rt.mw(Register::A3 as u32, 0)
+            rt.rw_traced(Register::A3, 0)
         };
 
         let shard = rt.current_shard();

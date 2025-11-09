@@ -20,7 +20,7 @@ impl Syscall for SysNopSyscall {
     ) -> Option<u32> {
         let v0 = 0;
         let start_clk = rt.clk;
-        let a3_record = rt.mw(Register::A3 as u32, 0);
+        let a3_record = rt.rw_traced(Register::A3, 0);
         let shard = rt.current_shard();
         let event = PrecompileEvent::Linux(LinuxEvent {
             shard,

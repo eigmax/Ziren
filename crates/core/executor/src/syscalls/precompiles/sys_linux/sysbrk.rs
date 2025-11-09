@@ -19,9 +19,9 @@ impl Syscall for SysBrkSyscall {
         a1: u32,
     ) -> Option<u32> {
         let start_clk = rt.clk;
-        let (record, brk) = rt.mr(Register::BRK as u32);
+        let (record, brk) = rt.rr_traced(Register::BRK);
         let v0 = if a0 > brk { a0 } else { brk };
-        let a3_record = rt.mw(Register::A3 as u32, 0);
+        let a3_record = rt.rw_traced(Register::A3, 0);
         let shard = rt.current_shard();
         let event = PrecompileEvent::Linux(LinuxEvent {
             shard,
