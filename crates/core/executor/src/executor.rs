@@ -9,9 +9,10 @@ use enum_map::EnumMap;
 use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use zkm_stark::{shape::Shape, ZKMCoreOpts};
+use zkm_stark::ZKMCoreOpts;
 
 use crate::{
+    MaximalShapes,
     context::ZKMContext,
     dependencies::{
         emit_branch_dependencies, emit_cloclz_dependencies, emit_divrem_dependencies,
@@ -152,7 +153,7 @@ pub struct Executor<'a> {
     pub hook_registry: HookRegistry<'a>,
 
     /// The maximal shapes for the program.
-    pub maximal_shapes: Option<Vec<Shape<MipsAirId>>>,
+    pub maximal_shapes: Option<MaximalShapes>,
 
     /// The costs of the program.
     pub costs: HashMap<MipsAirId, u64>,
@@ -395,6 +396,7 @@ impl<'a> Executor<'a> {
 
     /// Get the current value of a word.
     #[must_use]
+    #[inline]
     pub fn word(&mut self, addr: u32) -> u32 {
         #[allow(clippy::single_match_else)]
         let record = self.state.memory.page_table.get(addr);
@@ -425,6 +427,7 @@ impl<'a> Executor<'a> {
 
     /// Get the current timestamp for a given memory access position.
     #[must_use]
+    #[inline]
     pub const fn timestamp(&self, position: &MemoryAccessPosition) -> u32 {
         self.state.clk + *position as u32
     }
@@ -2090,7 +2093,8 @@ impl<'a> Executor<'a> {
                     shape_match_found = false;
 
                     for shape in maximal_shapes.iter() {
-                        let cpu_threshold = shape.log2_height(&MipsAirId::Cpu).unwrap();
+                        //let cpu_threshold = shape.log2_height(&MipsAirId::Cpu).unwrap();
+                        let cpu_threshold = shape[MipsAirId::Cpu];
                         if self.state.clk > ((1 << cpu_threshold) << 2) {
                             continue;
                         }
@@ -2102,7 +2106,7 @@ impl<'a> Executor<'a> {
                                 continue;
                             }
 
-                            let threshold = shape.height(&air).unwrap_or_default();
+                            let threshold = 1 << shape[air];
                             let count = event_counts[air] as usize;
                             if count > threshold {
                                 shape_too_small = true;
