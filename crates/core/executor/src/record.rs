@@ -83,11 +83,18 @@ pub struct ExecutionRecord {
 impl ExecutionRecord {
     /// Create a new [`ExecutionRecord`].
     #[must_use]
+    #[cfg(feature = "pre-alloc")]
     pub fn new(program: Arc<Program>) -> Self {
         let cpu_events = Vec::with_capacity(1 << 22);
         let add_events = Vec::with_capacity(1 << 22);
         let memory_instr_events = Vec::with_capacity(1 << 21);
         Self { program, cpu_events, memory_instr_events, add_events, ..Default::default() }
+    }
+
+    #[must_use]
+    #[cfg(not(feature = "pre-alloc"))]
+    pub fn new(program: Arc<Program>) -> Self {
+        Self { program, ..Default::default() }
     }
 
     /// Add a mul event to the execution record.

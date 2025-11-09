@@ -79,6 +79,7 @@ impl<V: Copy> PagedMemory<V> {
     }
 
     /// Insert a value at the given address. Returns the previous value, if any.
+    #[inline]
     pub fn insert(&mut self, addr: u32, value: V) -> Option<V> {
         let (upper, lower) = Self::indices(addr);
         let mut index = self.index[upper];
@@ -102,6 +103,7 @@ impl<V: Copy> PagedMemory<V> {
     }
 
     /// Gets the memory entry for the given address.
+    #[inline]
     pub fn entry(&mut self, addr: u32) -> Entry<'_, V> {
         let (upper, lower) = Self::indices(addr);
         if upper >= self.index.len() {
@@ -234,16 +236,19 @@ pub struct OccupiedEntry<'a, V> {
 
 impl<'a, V: Copy> OccupiedEntry<'a, V> {
     /// Get a reference to the value in the `OccupiedEntry`.
+    #[inline]
     pub fn get(&self) -> &V {
         self.entry.as_ref().unwrap()
     }
 
     /// Get a mutable reference to the value in the `OccupiedEntry`.
+    #[inline]
     pub fn get_mut(&mut self) -> &mut V {
         self.entry.as_mut().unwrap()
     }
 
     /// Insert a value in the `OccupiedEntry`, returning the previous value.
+    #[inline]
     pub fn insert(&mut self, value: V) -> V {
         self.entry.replace(value).unwrap()
     }
