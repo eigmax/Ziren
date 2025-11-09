@@ -1,5 +1,8 @@
 use std::{
-    fs::File, io::{BufWriter, Write}, str::FromStr, sync::Arc
+    fs::File,
+    io::{BufWriter, Write},
+    str::FromStr,
+    sync::Arc,
 };
 
 use enum_map::EnumMap;
@@ -612,9 +615,14 @@ impl<'a> Executor<'a> {
         record.value
     }
 
-        /// Read from memory, assuming that all addresses are aligned.
+    /// Read from memory, assuming that all addresses are aligned.
     #[inline]
-    pub fn mr_cpu_non_trace(&mut self, addr: u32) -> u32 {
+    pub fn mr_cpu_non_trace(&mut self, addr: u32, position: MemoryAccessPosition) -> u32 {
+        // Assert that the address is aligned.
+        assert_valid_memory_access!(addr, position);
+        // Read the address from memory and create a memory read record.
+        let shard = self.shard();
+        let timestamp = self.timestamp(&position);
 
         // Get the memory record entry.
         let entry = self.state.memory.entry(addr);
@@ -650,6 +658,16 @@ impl<'a> Executor<'a> {
                 entry.insert(MemoryRecord { value: *value, shard: 0, timestamp: 0 })
             }
         };
+
+        // We update the local memory counter in one case:
+        //  1. This is the first time the address is touched, this corresponds to the
+        //     condition record.shard != shard.
+        if !self.unconstrained && (record.shard != shard) {
+            self.local_counts.local_mem += 1;
+        }
+
+        record.shard = shard;
+        record.timestamp = timestamp;
 
         record.value
     }
@@ -698,10 +716,10 @@ impl<'a> Executor<'a> {
     /// Read from a register.
     #[inline]
     pub fn rr(&mut self, register: Register, position: MemoryAccessPosition) -> u32 {
-        if self.executor_mode != ExecutorMode::Trace {
-            self.mr_cpu_non_trace(register as u32)
-        } else {
+        if !self.unconstrained && self.executor_mode == ExecutorMode::Trace {
             self.mr_cpu(register as u32, position)
+        } else {
+            self.mr_cpu_non_trace(register as u32, position)
         }
     }
 
