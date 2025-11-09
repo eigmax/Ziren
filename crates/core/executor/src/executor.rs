@@ -2074,8 +2074,8 @@ impl<'a> Executor<'a> {
                     let padded_lde_size = estimate_mips_lde_size(padded_event_counts, &self.costs);
                     if padded_lde_size > self.lde_size_threshold {
                         tracing::warn!(
-                            "stopping shard early due to lde size: {} gb",
-                            (padded_lde_size as u64) / 1_000_000_000
+                            "stopping shard early due to lde size: {} Gib",
+                            (padded_lde_size as f64) / (1 << 9) as f64,
                         );
                         shape_match_found = false;
                     }
@@ -2093,7 +2093,6 @@ impl<'a> Executor<'a> {
                     shape_match_found = false;
 
                     for shape in maximal_shapes.iter() {
-                        //let cpu_threshold = shape.log2_height(&MipsAirId::Cpu).unwrap();
                         let cpu_threshold = shape[MipsAirId::Cpu];
                         if self.state.clk > ((1 << cpu_threshold) << 2) {
                             continue;
@@ -2130,7 +2129,7 @@ impl<'a> Executor<'a> {
 
                     if !shape_match_found {
                         self.record.counts = Some(event_counts);
-                        log::warn!(
+                        log::debug!(
                             "stopping shard early due to no shapes fitting: \
                             clk: {},
                             clk_usage: {}",

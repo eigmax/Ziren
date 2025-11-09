@@ -120,6 +120,7 @@ pub enum MipsAirId {
 impl MipsAirId {
     /// Returns the AIRs that are not part of precompile shards and not the program or byte AIR.
     #[must_use]
+    #[inline(always)]
     pub fn core() -> Vec<MipsAirId> {
         vec![
             MipsAirId::Cpu,
