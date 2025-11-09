@@ -8580,6 +8580,7 @@ dependencies = [
  "static_assertions",
  "strum",
  "strum_macros",
+ "tempfile",
  "test-artifacts",
  "thiserror 1.0.69",
  "tiny-keccak",
