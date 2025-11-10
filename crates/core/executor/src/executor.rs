@@ -740,6 +740,96 @@ impl<'a> Executor<'a> {
         )
     }
 
+    /// Write a word to register and create an access record.
+    pub fn rw_cpu_traced(
+        &mut self,
+        register: Register,
+        value: u32,
+        shard: u32,
+        timestamp: u32,
+        local_memory_access: Option<&mut HashMap<u32, MemoryLocalEvent>>,
+    ) -> MemoryWriteRecord {
+        let addr = register as u32;
+        // Get the memory record entry.
+        let entry = self.state.memory.registers.entry(addr);
+        if self.executor_mode == ExecutorMode::Checkpoint || self.unconstrained {
+            match entry {
+                Entry::Occupied(ref entry) => {
+                    let record = entry.get();
+                    self.memory_checkpoint.registers.entry(addr).or_insert_with(|| Some(*record));
+                }
+                Entry::Vacant(_) => {
+                    self.memory_checkpoint.registers.entry(addr).or_insert(None);
+                }
+            }
+        }
+
+        // If we're in unconstrained mode, we don't want to modify state, so we'll save the
+        // original state if it's the first time modifying it.
+        if self.unconstrained {
+            let record = match entry {
+                Entry::Occupied(ref entry) => Some(entry.get()),
+                Entry::Vacant(_) => None,
+            };
+            self.unconstrained_state.memory_diff.entry(addr).or_insert(record.copied());
+        }
+
+        // If it's the first time accessing this address, initialize previous values.
+        let record: &mut MemoryRecord = match entry {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                // If addr has a specific value to be initialized with, use that, otherwise 0.
+                let value = self.state.uninitialized_memory.page_table.get(addr).unwrap_or(&0);
+                self.uninitialized_memory_checkpoint.page_table.entry(addr).or_insert_with(|| *value != 0);
+
+                entry.insert(MemoryRecord { value: *value, shard: 0, timestamp: 0 })
+            }
+        };
+
+        // We update the local memory counter in two cases:
+        //  1. This is the first time the address is touched, this corresponds to the
+        //     condition record.shard != shard.
+        //  2. The address is being accessed in a syscall. In this case, we need to send it. We use
+        //     local_memory_access to detect this. *WARNING*: This means that we are counting
+        //     on the .is_some() condition to be true only in the SyscallContext.
+        if !self.unconstrained && (record.shard != shard || local_memory_access.is_some()) {
+            self.local_counts.local_mem += 1;
+        }
+
+        let prev_record = *record;
+        record.value = value;
+        record.shard = shard;
+        record.timestamp = timestamp;
+
+        if !self.unconstrained && self.executor_mode == ExecutorMode::Trace {
+            let local_memory_access = if let Some(local_memory_access) = local_memory_access {
+                local_memory_access
+            } else {
+                &mut self.local_memory_access
+            };
+
+            local_memory_access
+                .entry(addr)
+                .and_modify(|e| {
+                    e.final_mem_access = *record;
+                })
+                .or_insert(MemoryLocalEvent {
+                    addr,
+                    initial_mem_access: prev_record,
+                    final_mem_access: *record,
+                });
+        }
+
+        // Construct the memory write record.
+        MemoryWriteRecord::new(
+            record.value,
+            record.shard,
+            record.timestamp,
+            prev_record.value,
+            prev_record.shard,
+            prev_record.timestamp,
+        )
+    }
 
     /// Write a word to a register and create an access record.
     ///
