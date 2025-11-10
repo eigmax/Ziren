@@ -115,13 +115,14 @@ impl<'a, 'b> SyscallContext<'a, 'b> {
 
     /// Write a register and record the memory access.
     pub fn rw_traced(&mut self, register: Register, value: u32) -> MemoryWriteRecord {
-        let record = self.rt.rw_traced(
+        let record = self.rt.rw_cpu_traced(
             register,
             value,
             self.current_shard,
             self.clk,
             Some(&mut self.local_memory_access),
         );
+
         record
     }
 
