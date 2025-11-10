@@ -237,6 +237,9 @@ pub struct SplitOpts {
     pub sha_compress: usize,
     /// The threshold for memory events.
     pub memory: usize,
+    /// The threshold for combining the memory init/finalize events in to the current shard in
+    /// terms of cycles.
+    pub combine_memory_threshold: usize,
 }
 
 impl SplitOpts {
@@ -249,6 +252,7 @@ impl SplitOpts {
             sha_extend: 32 * deferred_split_threshold / 48,
             sha_compress: 32 * deferred_split_threshold / 80,
             memory: 64 * deferred_split_threshold,
+            combine_memory_threshold: 1 << 17,
         }
     }
 }

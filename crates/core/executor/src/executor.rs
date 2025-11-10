@@ -12,7 +12,6 @@ use thiserror::Error;
 use zkm_stark::ZKMCoreOpts;
 
 use crate::{
-    MaximalShapes,
     context::ZKMContext,
     dependencies::{
         emit_branch_dependencies, emit_cloclz_dependencies, emit_divrem_dependencies,
@@ -32,7 +31,8 @@ use crate::{
     state::{ExecutionState, ForkState},
     subproof::SubproofVerifier,
     syscalls::{default_syscall_map, Syscall, SyscallCode, SyscallContext},
-    ExecutionReport, Instruction, MipsAirId, Opcode, Program, Register, NUM_REGISTERS,
+    ExecutionReport, Instruction, MaximalShapes, MipsAirId, Opcode, Program, Register,
+    NUM_REGISTERS,
 };
 
 /// The maximum number of instructions in a program.
@@ -340,7 +340,7 @@ impl<'a> Executor<'a> {
         runtime
     }
 
-/// Get the current values of the registers.
+    /// Get the current values of the registers.
     #[allow(clippy::single_match_else)]
     #[must_use]
     pub fn registers(&mut self) -> [u32; NUM_REGISTERS] {
@@ -477,7 +477,10 @@ impl<'a> Executor<'a> {
             Entry::Vacant(entry) => {
                 // If addr has a specific value to be initialized with, use that, otherwise 0.
                 let value = self.state.uninitialized_memory.page_table.get(addr).unwrap_or(&0);
-                self.uninitialized_memory_checkpoint.page_table.entry(addr).or_insert_with(|| *value != 0);
+                self.uninitialized_memory_checkpoint
+                    .page_table
+                    .entry(addr)
+                    .or_insert_with(|| *value != 0);
                 entry.insert(MemoryRecord { value: *value, shard: 0, timestamp: 0 })
             }
         };
@@ -572,7 +575,6 @@ impl<'a> Executor<'a> {
         record.timestamp = timestamp;
         record.value
     }
-
 
     /// Read a register and create an access record.
     ///
@@ -689,7 +691,10 @@ impl<'a> Executor<'a> {
             Entry::Vacant(entry) => {
                 // If addr has a specific value to be initialized with, use that, otherwise 0.
                 let value = self.state.uninitialized_memory.page_table.get(addr).unwrap_or(&0);
-                self.uninitialized_memory_checkpoint.page_table.entry(addr).or_insert_with(|| *value != 0);
+                self.uninitialized_memory_checkpoint
+                    .page_table
+                    .entry(addr)
+                    .or_insert_with(|| *value != 0);
 
                 entry.insert(MemoryRecord { value: *value, shard: 0, timestamp: 0 })
             }
@@ -780,7 +785,10 @@ impl<'a> Executor<'a> {
             Entry::Vacant(entry) => {
                 // If addr has a specific value to be initialized with, use that, otherwise 0.
                 let value = self.state.uninitialized_memory.page_table.get(addr).unwrap_or(&0);
-                self.uninitialized_memory_checkpoint.page_table.entry(addr).or_insert_with(|| *value != 0);
+                self.uninitialized_memory_checkpoint
+                    .page_table
+                    .entry(addr)
+                    .or_insert_with(|| *value != 0);
 
                 entry.insert(MemoryRecord { value: *value, shard: 0, timestamp: 0 })
             }
@@ -967,8 +975,6 @@ impl<'a> Executor<'a> {
         record.shard = shard;
         record.timestamp = timestamp;
     }
-
-
 
     /// Read from memory, assuming that all addresses are aligned.
     #[inline]
@@ -2523,8 +2529,7 @@ impl<'a> Executor<'a> {
                 .push(MemoryInitializeFinalizeEvent::finalize_from_record(0, addr_0_final_record));
 
             let memory_initialize_events = &mut self.record.global_memory_initialize_events;
-            let addr_0_initialize_event =
-                MemoryInitializeFinalizeEvent::initialize(0, 0);
+            let addr_0_initialize_event = MemoryInitializeFinalizeEvent::initialize(0, 0);
             memory_initialize_events.push(addr_0_initialize_event);
 
             // Count the number of touched memory addresses manually, since `PagedMemory` doesn't
@@ -2561,10 +2566,8 @@ impl<'a> Executor<'a> {
                 // events, so we only send init events for other memory addresses.
                 if !self.record.program.image.contains_key(&addr) {
                     let initial_value = self.state.uninitialized_memory.get(addr).unwrap_or(&0);
-                    memory_initialize_events.push(MemoryInitializeFinalizeEvent::initialize(
-                        addr,
-                        *initial_value
-                    ));
+                    memory_initialize_events
+                        .push(MemoryInitializeFinalizeEvent::initialize(addr, *initial_value));
                 }
 
                 let record = *self.state.memory.get(addr).unwrap();

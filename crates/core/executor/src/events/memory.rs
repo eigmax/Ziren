@@ -202,12 +202,7 @@ impl MemoryInitializeFinalizeEvent {
     /// Creates a new [``MemoryInitializeFinalizeEvent``] for a finalization.
     #[must_use]
     pub const fn finalize_from_record(addr: u32, record: &MemoryRecord) -> Self {
-        Self {
-            addr,
-            value: record.value,
-            shard: record.shard,
-            timestamp: record.timestamp,
-        }
+        Self { addr, value: record.value, shard: record.shard, timestamp: record.timestamp }
     }
 }
 

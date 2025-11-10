@@ -3,8 +3,8 @@ use std::{
     str::FromStr,
 };
 
-use enum_map::EnumMap;
 use enum_map::Enum;
+use enum_map::EnumMap;
 use serde::{Deserialize, Serialize};
 use strum::{EnumIter, IntoEnumIterator};
 use zkm_stark::shape::Shape;
@@ -232,7 +232,7 @@ impl FromIterator<Shape<MipsAirId>> for MaximalShapes {
                 #[allow(irrefutable_let_patterns)]
                 if let Ok(core_air) = MipsAirId::try_from(air) {
                     maximal_shape[core_air] = height as u32;
-                } else { 
+                } else {
                     tracing::warn!("Invalid core air: {air}");
                 }
             }
