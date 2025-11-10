@@ -29,11 +29,11 @@ impl Syscall for SysMmapSyscall {
             size += PAGE_SIZE as u32 - (size & (PAGE_ADDR_MASK as u32));
         }
 
-        let a3_record = rt.mw(Register::A3 as u32, 0);
+        let a3_record = rt.rw_traced(Register::A3, 0);
 
         let (v0, write_records) = if a0 == 0 {
             let v0 = rt.rt.register(Register::HEAP);
-            let w_record = rt.mw(Register::HEAP as u32, v0 + size);
+            let w_record = rt.rw_traced(Register::HEAP, v0 + size);
             (v0, vec![a3_record, w_record])
         } else {
             (a0, vec![a3_record])

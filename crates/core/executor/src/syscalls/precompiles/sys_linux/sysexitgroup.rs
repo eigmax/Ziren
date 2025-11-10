@@ -22,7 +22,7 @@ impl Syscall for SysExitGroupSyscall {
         rt.set_next_pc(0);
         rt.set_exit_code(a0);
         let v0 = 0; // Exit group does not return a value
-        let a3_record = rt.mw(Register::A3 as u32, 0);
+        let a3_record = rt.rw_traced(Register::A3, 0);
         let shard = rt.current_shard();
         let event = PrecompileEvent::Linux(LinuxEvent {
             shard,

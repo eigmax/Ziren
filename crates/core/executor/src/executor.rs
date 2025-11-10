@@ -9,7 +9,7 @@ use enum_map::EnumMap;
 use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use zkm_stark::{shape::Shape, ZKMCoreOpts};
+use zkm_stark::ZKMCoreOpts;
 
 use crate::{
     context::ZKMContext,
@@ -24,14 +24,15 @@ use crate::{
         MemoryRecord, MemoryRecordEnum, MemoryWriteRecord, MiscEvent, MovCondEvent, SyscallEvent,
     },
     hook::{HookEnv, HookRegistry},
-    memory::{Entry, PagedMemory},
+    memory::{Entry, Memory},
     pad_mips_event_counts,
     record::{ExecutionRecord, MemoryAccessRecord},
     sign_extend,
     state::{ExecutionState, ForkState},
     subproof::SubproofVerifier,
     syscalls::{default_syscall_map, Syscall, SyscallCode, SyscallContext},
-    ExecutionReport, Instruction, MipsAirId, Opcode, Program, Register, NUM_REGISTERS,
+    ExecutionReport, Instruction, MaximalShapes, MipsAirId, Opcode, Program, Register,
+    NUM_REGISTERS,
 };
 
 /// The maximum number of instructions in a program.
@@ -99,11 +100,11 @@ pub struct Executor<'a> {
 
     /// Memory addresses that were touched in this batch of shards. Used to minimize the size of
     /// checkpoints.
-    pub memory_checkpoint: PagedMemory<Option<MemoryRecord>>,
+    pub memory_checkpoint: Memory<Option<MemoryRecord>>,
 
     /// Memory addresses that were initialized in this batch of shards. Used to minimize the size of
     /// checkpoints. The value stored is whether it had a value at the beginning of the batch.
-    pub uninitialized_memory_checkpoint: PagedMemory<bool>,
+    pub uninitialized_memory_checkpoint: Memory<bool>,
 
     /// The memory accesses for the current cycle.
     pub memory_accesses: MemoryAccessRecord,
@@ -152,7 +153,7 @@ pub struct Executor<'a> {
     pub hook_registry: HookRegistry<'a>,
 
     /// The maximal shapes for the program.
-    pub maximal_shapes: Option<Vec<Shape<MipsAirId>>>,
+    pub maximal_shapes: Option<MaximalShapes>,
 
     /// The costs of the program.
     pub costs: HashMap<MipsAirId, u64>,
@@ -229,13 +230,6 @@ pub enum ExecutionError {
     EndInUnconstrained(),
 }
 
-macro_rules! assert_valid_memory_access {
-    ($addr:expr, $position:expr) => {
-        #[cfg(not(debug_assertions))]
-        {}
-    };
-}
-
 impl<'a> Executor<'a> {
     /// Create a new [``Executor``] from a program and options.
     #[must_use]
@@ -304,8 +298,8 @@ impl<'a> Executor<'a> {
             } else {
                 DeferredProofVerification::Enabled
             },
-            memory_checkpoint: PagedMemory::new_preallocated(),
-            uninitialized_memory_checkpoint: PagedMemory::new_preallocated(),
+            memory_checkpoint: Memory::default(),
+            uninitialized_memory_checkpoint: Memory::default(),
             local_memory_access: HashMap::new(),
             maximal_shapes: None,
             costs: costs.into_iter().map(|(k, v)| (k, v as u64)).collect(),
@@ -346,20 +340,50 @@ impl<'a> Executor<'a> {
         runtime
     }
 
+    /// Get the current values of the registers.
+    #[allow(clippy::single_match_else)]
+    #[must_use]
+    pub fn registers(&mut self) -> [u32; NUM_REGISTERS] {
+        let mut registers = [0; NUM_REGISTERS];
+        for i in 0..NUM_REGISTERS as u32 {
+            let record = self.state.memory.registers.get(i);
+
+            // Only add the previous memory state to checkpoint map if we're in checkpoint mode,
+            // or if we're in unconstrained mode. In unconstrained mode, the mode is always
+            // Simple.
+            if self.executor_mode == ExecutorMode::Checkpoint || self.unconstrained {
+                match record {
+                    Some(record) => {
+                        self.memory_checkpoint.registers.entry(i).or_insert_with(|| Some(*record));
+                    }
+                    None => {
+                        self.memory_checkpoint.registers.entry(i).or_insert(None);
+                    }
+                }
+            }
+
+            registers[i as usize] = match record {
+                Some(record) => record.value,
+                None => 0,
+            };
+        }
+        registers
+    }
+
     /// Get the current value of a register, but doesn't use a memory record.
     /// Careful call it directly.
     #[must_use]
     pub fn register(&mut self, register: Register) -> u32 {
         let addr = register as u32;
-        let record = self.state.memory.get(addr);
+        let record = self.state.memory.registers.get(addr);
 
         if self.executor_mode == ExecutorMode::Checkpoint || self.unconstrained {
             match record {
                 Some(record) => {
-                    self.memory_checkpoint.entry(addr).or_insert_with(|| Some(*record));
+                    self.memory_checkpoint.registers.entry(addr).or_insert_with(|| Some(*record));
                 }
                 None => {
-                    self.memory_checkpoint.entry(addr).or_insert(None);
+                    self.memory_checkpoint.registers.entry(addr).or_insert(None);
                 }
             }
         }
@@ -372,17 +396,18 @@ impl<'a> Executor<'a> {
 
     /// Get the current value of a word.
     #[must_use]
+    #[inline]
     pub fn word(&mut self, addr: u32) -> u32 {
         #[allow(clippy::single_match_else)]
-        let record = self.state.memory.get(addr);
+        let record = self.state.memory.page_table.get(addr);
 
         if self.executor_mode == ExecutorMode::Checkpoint || self.unconstrained {
             match record {
                 Some(record) => {
-                    self.memory_checkpoint.entry(addr).or_insert_with(|| Some(*record));
+                    self.memory_checkpoint.page_table.entry(addr).or_insert_with(|| Some(*record));
                 }
                 None => {
-                    self.memory_checkpoint.entry(addr).or_insert(None);
+                    self.memory_checkpoint.page_table.entry(addr).or_insert(None);
                 }
             }
         }
@@ -402,6 +427,7 @@ impl<'a> Executor<'a> {
 
     /// Get the current timestamp for a given memory access position.
     #[must_use]
+    #[inline]
     pub const fn timestamp(&self, position: &MemoryAccessPosition) -> u32 {
         self.state.clk + *position as u32
     }
@@ -422,15 +448,15 @@ impl<'a> Executor<'a> {
         local_memory_access: Option<&mut HashMap<u32, MemoryLocalEvent>>,
     ) -> MemoryReadRecord {
         // Get the memory record entry.
-        let entry = self.state.memory.entry(addr);
+        let entry = self.state.memory.page_table.entry(addr);
         if self.executor_mode == ExecutorMode::Checkpoint || self.unconstrained {
             match entry {
                 Entry::Occupied(ref entry) => {
                     let record = entry.get();
-                    self.memory_checkpoint.entry(addr).or_insert_with(|| Some(*record));
+                    self.memory_checkpoint.page_table.entry(addr).or_insert_with(|| Some(*record));
                 }
                 Entry::Vacant(_) => {
-                    self.memory_checkpoint.entry(addr).or_insert(None);
+                    self.memory_checkpoint.page_table.entry(addr).or_insert(None);
                 }
             }
         }
@@ -450,8 +476,11 @@ impl<'a> Executor<'a> {
             Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => {
                 // If addr has a specific value to be initialized with, use that, otherwise 0.
-                let value = self.state.uninitialized_memory.get(addr).unwrap_or(&0);
-                self.uninitialized_memory_checkpoint.entry(addr).or_insert_with(|| *value != 0);
+                let value = self.state.uninitialized_memory.page_table.get(addr).unwrap_or(&0);
+                self.uninitialized_memory_checkpoint
+                    .page_table
+                    .entry(addr)
+                    .or_insert_with(|| *value != 0);
                 entry.insert(MemoryRecord { value: *value, shard: 0, timestamp: 0 })
             }
         };
@@ -499,25 +528,21 @@ impl<'a> Executor<'a> {
         )
     }
 
-    /// Write a word to memory and create an access record.
-    pub fn mw(
-        &mut self,
-        addr: u32,
-        value: u32,
-        shard: u32,
-        timestamp: u32,
-        local_memory_access: Option<&mut HashMap<u32, MemoryLocalEvent>>,
-    ) -> MemoryWriteRecord {
+    /// Read a register and return its value.
+    ///
+    /// Assumes that the executor mode IS NOT [`ExecutorMode::Trace`]
+    pub fn rr(&mut self, register: Register, shard: u32, timestamp: u32) -> u32 {
         // Get the memory record entry.
-        let entry = self.state.memory.entry(addr);
+        let addr = register as u32;
+        let entry = self.state.memory.registers.entry(addr);
         if self.executor_mode == ExecutorMode::Checkpoint || self.unconstrained {
             match entry {
                 Entry::Occupied(ref entry) => {
                     let record = entry.get();
-                    self.memory_checkpoint.entry(addr).or_insert_with(|| Some(*record));
+                    self.memory_checkpoint.registers.entry(addr).or_insert_with(|| Some(*record));
                 }
                 Entry::Vacant(_) => {
-                    self.memory_checkpoint.entry(addr).or_insert(None);
+                    self.memory_checkpoint.registers.entry(addr).or_insert(None);
                 }
             }
         }
@@ -537,8 +562,139 @@ impl<'a> Executor<'a> {
             Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => {
                 // If addr has a specific value to be initialized with, use that, otherwise 0.
-                let value = self.state.uninitialized_memory.get(addr).unwrap_or(&0);
-                self.uninitialized_memory_checkpoint.entry(addr).or_insert_with(|| *value != 0);
+                let value = self.state.uninitialized_memory.registers.get(addr).unwrap_or(&0);
+                self.uninitialized_memory_checkpoint
+                    .registers
+                    .entry(addr)
+                    .or_insert_with(|| *value != 0);
+                entry.insert(MemoryRecord { value: *value, shard: 0, timestamp: 0 })
+            }
+        };
+
+        record.shard = shard;
+        record.timestamp = timestamp;
+        record.value
+    }
+
+    /// Read a register and create an access record.
+    ///
+    /// Assumes that self.mode IS [`ExecutorMode::Trace`].
+    pub fn rr_traced(
+        &mut self,
+        register: Register,
+        shard: u32,
+        timestamp: u32,
+        local_memory_access: Option<&mut HashMap<u32, MemoryLocalEvent>>,
+    ) -> MemoryReadRecord {
+        // Get the memory record entry.
+        let addr = register as u32;
+        let entry = self.state.memory.registers.entry(addr);
+        if self.executor_mode == ExecutorMode::Checkpoint || self.unconstrained {
+            match entry {
+                Entry::Occupied(ref entry) => {
+                    let record = entry.get();
+                    self.memory_checkpoint.registers.entry(addr).or_insert_with(|| Some(*record));
+                }
+                Entry::Vacant(_) => {
+                    self.memory_checkpoint.registers.entry(addr).or_insert(None);
+                }
+            }
+        }
+        // If we're in unconstrained mode, we don't want to modify state, so we'll save the
+        // original state if it's the first time modifying it.
+        if self.unconstrained {
+            let record = match entry {
+                Entry::Occupied(ref entry) => Some(entry.get()),
+                Entry::Vacant(_) => None,
+            };
+            self.unconstrained_state.memory_diff.entry(addr).or_insert(record.copied());
+        }
+        // If it's the first time accessing this address, initialize previous values.
+        let record: &mut MemoryRecord = match entry {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                // If addr has a specific value to be initialized with, use that, otherwise 0.
+                let value = self.state.uninitialized_memory.registers.get(addr).unwrap_or(&0);
+                self.uninitialized_memory_checkpoint
+                    .registers
+                    .entry(addr)
+                    .or_insert_with(|| *value != 0);
+                entry.insert(MemoryRecord { value: *value, shard: 0, timestamp: 0 })
+            }
+        };
+        let prev_record = *record;
+        record.shard = shard;
+        record.timestamp = timestamp;
+        if !self.unconstrained && self.executor_mode == ExecutorMode::Trace {
+            let local_memory_access = if let Some(local_memory_access) = local_memory_access {
+                local_memory_access
+            } else {
+                &mut self.local_memory_access
+            };
+            local_memory_access
+                .entry(addr)
+                .and_modify(|e| {
+                    e.final_mem_access = *record;
+                })
+                .or_insert(MemoryLocalEvent {
+                    addr,
+                    initial_mem_access: prev_record,
+                    final_mem_access: *record,
+                });
+        }
+        // Construct the memory read record.
+        MemoryReadRecord::new(
+            record.value,
+            record.shard,
+            record.timestamp,
+            prev_record.shard,
+            prev_record.timestamp,
+        )
+    }
+
+    /// Write a word to memory and create an access record.
+    pub fn mw(
+        &mut self,
+        addr: u32,
+        value: u32,
+        shard: u32,
+        timestamp: u32,
+        local_memory_access: Option<&mut HashMap<u32, MemoryLocalEvent>>,
+    ) -> MemoryWriteRecord {
+        // Get the memory record entry.
+        let entry = self.state.memory.page_table.entry(addr);
+        if self.executor_mode == ExecutorMode::Checkpoint || self.unconstrained {
+            match entry {
+                Entry::Occupied(ref entry) => {
+                    let record = entry.get();
+                    self.memory_checkpoint.page_table.entry(addr).or_insert_with(|| Some(*record));
+                }
+                Entry::Vacant(_) => {
+                    self.memory_checkpoint.page_table.entry(addr).or_insert(None);
+                }
+            }
+        }
+
+        // If we're in unconstrained mode, we don't want to modify state, so we'll save the
+        // original state if it's the first time modifying it.
+        if self.unconstrained {
+            let record = match entry {
+                Entry::Occupied(ref entry) => Some(entry.get()),
+                Entry::Vacant(_) => None,
+            };
+            self.unconstrained_state.memory_diff.entry(addr).or_insert(record.copied());
+        }
+
+        // If it's the first time accessing this address, initialize previous values.
+        let record: &mut MemoryRecord = match entry {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                // If addr has a specific value to be initialized with, use that, otherwise 0.
+                let value = self.state.uninitialized_memory.page_table.get(addr).unwrap_or(&0);
+                self.uninitialized_memory_checkpoint
+                    .page_table
+                    .entry(addr)
+                    .or_insert_with(|| *value != 0);
 
                 entry.insert(MemoryRecord { value: *value, shard: 0, timestamp: 0 })
             }
@@ -589,29 +745,268 @@ impl<'a> Executor<'a> {
         )
     }
 
-    /// Read from memory, assuming that all addresses are aligned.
-    pub fn mr_cpu(&mut self, addr: u32, position: MemoryAccessPosition) -> u32 {
-        // Assert that the address is aligned.
-        assert_valid_memory_access!(addr, position);
-        // Read the address from memory and create a memory read record.
-        let record = self.mr(addr, self.shard(), self.timestamp(&position), None);
-
-        if position != MemoryAccessPosition::Memory {
-            // If the position is not Memory, we are reading from a register.
-            log::trace!("pc: {:X} read register {}, {:X}", self.state.pc, addr, record.value);
-        }
-
-        // If we're not in unconstrained mode, record the access for the current cycle.
-        if !self.unconstrained && self.executor_mode == ExecutorMode::Trace {
-            match position {
-                MemoryAccessPosition::A => self.memory_accesses.a = Some(record.into()),
-                MemoryAccessPosition::B => self.memory_accesses.b = Some(record.into()),
-                MemoryAccessPosition::C => self.memory_accesses.c = Some(record.into()),
-                MemoryAccessPosition::HI => self.memory_accesses.hi = Some(record.into()),
-                MemoryAccessPosition::Memory => self.memory_accesses.memory = Some(record.into()),
+    /// Write a word to register and create an access record.
+    pub fn rw_cpu_traced(
+        &mut self,
+        register: Register,
+        value: u32,
+        shard: u32,
+        timestamp: u32,
+        local_memory_access: Option<&mut HashMap<u32, MemoryLocalEvent>>,
+    ) -> MemoryWriteRecord {
+        let addr = register as u32;
+        // Get the memory record entry.
+        let entry = self.state.memory.registers.entry(addr);
+        if self.executor_mode == ExecutorMode::Checkpoint || self.unconstrained {
+            match entry {
+                Entry::Occupied(ref entry) => {
+                    let record = entry.get();
+                    self.memory_checkpoint.registers.entry(addr).or_insert_with(|| Some(*record));
+                }
+                Entry::Vacant(_) => {
+                    self.memory_checkpoint.registers.entry(addr).or_insert(None);
+                }
             }
         }
+
+        // If we're in unconstrained mode, we don't want to modify state, so we'll save the
+        // original state if it's the first time modifying it.
+        if self.unconstrained {
+            let record = match entry {
+                Entry::Occupied(ref entry) => Some(entry.get()),
+                Entry::Vacant(_) => None,
+            };
+            self.unconstrained_state.memory_diff.entry(addr).or_insert(record.copied());
+        }
+
+        // If it's the first time accessing this address, initialize previous values.
+        let record: &mut MemoryRecord = match entry {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                // If addr has a specific value to be initialized with, use that, otherwise 0.
+                let value = self.state.uninitialized_memory.page_table.get(addr).unwrap_or(&0);
+                self.uninitialized_memory_checkpoint
+                    .page_table
+                    .entry(addr)
+                    .or_insert_with(|| *value != 0);
+
+                entry.insert(MemoryRecord { value: *value, shard: 0, timestamp: 0 })
+            }
+        };
+
+        // We update the local memory counter in two cases:
+        //  1. This is the first time the address is touched, this corresponds to the
+        //     condition record.shard != shard.
+        //  2. The address is being accessed in a syscall. In this case, we need to send it. We use
+        //     local_memory_access to detect this. *WARNING*: This means that we are counting
+        //     on the .is_some() condition to be true only in the SyscallContext.
+        if !self.unconstrained && (record.shard != shard || local_memory_access.is_some()) {
+            self.local_counts.local_mem += 1;
+        }
+
+        let prev_record = *record;
+        record.value = value;
+        record.shard = shard;
+        record.timestamp = timestamp;
+
+        if !self.unconstrained && self.executor_mode == ExecutorMode::Trace {
+            let local_memory_access = if let Some(local_memory_access) = local_memory_access {
+                local_memory_access
+            } else {
+                &mut self.local_memory_access
+            };
+
+            local_memory_access
+                .entry(addr)
+                .and_modify(|e| {
+                    e.final_mem_access = *record;
+                })
+                .or_insert(MemoryLocalEvent {
+                    addr,
+                    initial_mem_access: prev_record,
+                    final_mem_access: *record,
+                });
+        }
+
+        // Construct the memory write record.
+        MemoryWriteRecord::new(
+            record.value,
+            record.shard,
+            record.timestamp,
+            prev_record.value,
+            prev_record.shard,
+            prev_record.timestamp,
+        )
+    }
+
+    /// Write a word to a register and create an access record.
+    ///
+    /// Assumes that self.mode IS [`ExecutorMode::Trace`].
+    pub fn rw_traced(
+        &mut self,
+        register: Register,
+        value: u32,
+        shard: u32,
+        timestamp: u32,
+        local_memory_access: Option<&mut HashMap<u32, MemoryLocalEvent>>,
+    ) -> MemoryWriteRecord {
+        let addr = register as u32;
+
+        // Get the memory record entry.
+        let entry = self.state.memory.registers.entry(addr);
+        if self.unconstrained {
+            match entry {
+                Entry::Occupied(ref entry) => {
+                    let record = entry.get();
+                    self.memory_checkpoint.registers.entry(addr).or_insert_with(|| Some(*record));
+                }
+                Entry::Vacant(_) => {
+                    self.memory_checkpoint.registers.entry(addr).or_insert(None);
+                }
+            }
+        }
+
+        // If we're in unconstrained mode, we don't want to modify state, so we'll save the
+        // original state if it's the first time modifying it.
+        if self.unconstrained {
+            let record = match entry {
+                Entry::Occupied(ref entry) => Some(entry.get()),
+                Entry::Vacant(_) => None,
+            };
+            self.unconstrained_state.memory_diff.entry(addr).or_insert(record.copied());
+        }
+
+        // If it's the first time accessing this register, initialize previous values.
+        let record: &mut MemoryRecord = match entry {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                // If addr has a specific value to be initialized with, use that, otherwise 0.
+                let value = self.state.uninitialized_memory.registers.get(addr).unwrap_or(&0);
+                self.uninitialized_memory_checkpoint
+                    .registers
+                    .entry(addr)
+                    .or_insert_with(|| *value != 0);
+
+                entry.insert(MemoryRecord { value: *value, shard: 0, timestamp: 0 })
+            }
+        };
+
+        let prev_record = *record;
+        record.value = value;
+        record.shard = shard;
+        record.timestamp = timestamp;
+
+        if !self.unconstrained {
+            let local_memory_access = if let Some(local_memory_access) = local_memory_access {
+                local_memory_access
+            } else {
+                &mut self.local_memory_access
+            };
+
+            local_memory_access
+                .entry(addr)
+                .and_modify(|e| {
+                    e.final_mem_access = *record;
+                })
+                .or_insert(MemoryLocalEvent {
+                    addr,
+                    initial_mem_access: prev_record,
+                    final_mem_access: *record,
+                });
+        }
+
+        // Construct the memory write record.
+        MemoryWriteRecord::new(
+            record.value,
+            record.shard,
+            record.timestamp,
+            prev_record.value,
+            prev_record.shard,
+            prev_record.timestamp,
+        )
+    }
+
+    /// Write a word to a register and create an access record.
+    ///
+    /// Assumes that the executor mode IS NOT [`ExecutorMode::Trace`].
+    #[inline]
+    pub fn rw(&mut self, register: Register, value: u32, shard: u32, timestamp: u32) {
+        let addr = register as u32;
+        // Get the memory record entry.
+        let entry = self.state.memory.registers.entry(addr);
+        if self.executor_mode == ExecutorMode::Checkpoint || self.unconstrained {
+            match entry {
+                Entry::Occupied(ref entry) => {
+                    let record = entry.get();
+                    self.memory_checkpoint.registers.entry(addr).or_insert_with(|| Some(*record));
+                }
+                Entry::Vacant(_) => {
+                    self.memory_checkpoint.registers.entry(addr).or_insert(None);
+                }
+            }
+        }
+
+        // If we're in unconstrained mode, we don't want to modify state, so we'll save the
+        // original state if it's the first time modifying it.
+        if self.unconstrained {
+            let record = match entry {
+                Entry::Occupied(ref entry) => Some(entry.get()),
+                Entry::Vacant(_) => None,
+            };
+            self.unconstrained_state.memory_diff.entry(addr).or_insert(record.copied());
+        }
+
+        // If it's the first time accessing this register, initialize previous values.
+        let record: &mut MemoryRecord = match entry {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                // If addr has a specific value to be initialized with, use that, otherwise 0.
+                let value = self.state.uninitialized_memory.registers.get(addr).unwrap_or(&0);
+                self.uninitialized_memory_checkpoint
+                    .registers
+                    .entry(addr)
+                    .or_insert_with(|| *value != 0);
+
+                entry.insert(MemoryRecord { value: *value, shard: 0, timestamp: 0 })
+            }
+        };
+
+        record.value = value;
+        record.shard = shard;
+        record.timestamp = timestamp;
+    }
+
+    /// Read from memory, assuming that all addresses are aligned.
+    #[inline]
+    pub fn mr_cpu(&mut self, addr: u32) -> u32 {
+        // Read the address from memory and create a memory read record.
+        let record =
+            self.mr(addr, self.shard(), self.timestamp(&MemoryAccessPosition::Memory), None);
+        // If we're not in unconstrained mode, record the access for the current cycle.
+        if self.executor_mode == ExecutorMode::Trace {
+            self.memory_accesses.memory = Some(record.into());
+        }
         record.value
+    }
+
+    /// Read a register.
+    #[inline]
+    pub fn rr_cpu(&mut self, register: Register, position: MemoryAccessPosition) -> u32 {
+        // Read the address from memory and create a memory read record if in trace mode.
+        if self.executor_mode == ExecutorMode::Trace {
+            let record = self.rr_traced(register, self.shard(), self.timestamp(&position), None);
+            if !self.unconstrained {
+                match position {
+                    MemoryAccessPosition::A => self.memory_accesses.a = Some(record.into()),
+                    MemoryAccessPosition::B => self.memory_accesses.b = Some(record.into()),
+                    MemoryAccessPosition::C => self.memory_accesses.c = Some(record.into()),
+                    _ => unreachable!(),
+                }
+            }
+            record.value
+        } else {
+            self.rr(register, self.shard(), self.timestamp(&position))
+        }
     }
 
     /// Write to memory.
@@ -620,54 +1015,43 @@ impl<'a> Executor<'a> {
     ///
     /// This function will panic if the address is not aligned or if the memory accesses are already
     /// initialized.
-    pub fn mw_cpu(&mut self, addr: u32, value: u32, position: MemoryAccessPosition) {
-        // Assert that the address is aligned.
-        assert_valid_memory_access!(addr, position);
-
+    pub fn mw_cpu(&mut self, addr: u32, value: u32) {
         // Read the address from memory and create a memory read record.
-        let record = self.mw(addr, value, self.shard(), self.timestamp(&position), None);
-
+        let record =
+            self.mw(addr, value, self.shard(), self.timestamp(&MemoryAccessPosition::Memory), None);
         // If we're not in unconstrained mode, record the access for the current cycle.
-        if !self.unconstrained && self.executor_mode == ExecutorMode::Trace {
-            match position {
-                MemoryAccessPosition::A => {
-                    debug_assert!(self.memory_accesses.a.is_none());
-                    self.memory_accesses.a = Some(record.into());
-                }
-                MemoryAccessPosition::B => {
-                    debug_assert!(self.memory_accesses.b.is_none());
-                    self.memory_accesses.b = Some(record.into());
-                }
-                MemoryAccessPosition::C => {
-                    debug_assert!(self.memory_accesses.c.is_none());
-                    self.memory_accesses.c = Some(record.into());
-                }
-                MemoryAccessPosition::HI => {
-                    debug_assert!(self.memory_accesses.hi.is_none());
-                    self.memory_accesses.hi = Some(record.into());
-                }
-                MemoryAccessPosition::Memory => {
-                    debug_assert!(self.memory_accesses.memory.is_none());
-                    self.memory_accesses.memory = Some(record.into());
-                }
-            }
+        if self.executor_mode == ExecutorMode::Trace {
+            debug_assert!(self.memory_accesses.memory.is_none());
+            self.memory_accesses.memory = Some(record.into());
         }
     }
 
-    /// Read from a register.
-    pub fn rr(&mut self, register: Register, position: MemoryAccessPosition) -> u32 {
-        self.mr_cpu(register as u32, position)
-    }
+    /// Write to a register.
+    pub fn rw_cpu(&mut self, register: Register, value: u32, position: MemoryAccessPosition) {
+        // Register %x0 should always be 0. See 2.6 Load and Store Instruction on
+        // P.18 of the RISC-V spec. We always write 0 to %x0.
+        let value = if register == Register::ZERO { 0 } else { value };
 
-    /// Write to a register A or AH
-    pub fn rw(&mut self, register: Register, value: u32, position: MemoryAccessPosition) {
-        // The only time we are writing to a register is when it is in operand A or AH.
-        debug_assert!([MemoryAccessPosition::A, MemoryAccessPosition::HI].contains(&position));
-        // Register 0 should always be 0
-        if register == Register::ZERO {
-            self.mw_cpu(register as u32, 0, position);
+        // Read the address from memory and create a memory read record.
+        if self.executor_mode == ExecutorMode::Trace {
+            let record =
+                self.rw_traced(register, value, self.shard(), self.timestamp(&position), None);
+            if !self.unconstrained {
+                // The only time we are writing to a register is when it is in operand A.
+                match position {
+                    MemoryAccessPosition::A => {
+                        debug_assert!(self.memory_accesses.a.is_none());
+                        self.memory_accesses.a = Some(record.into());
+                    }
+                    MemoryAccessPosition::HI => {
+                        debug_assert!(self.memory_accesses.hi.is_none());
+                        self.memory_accesses.hi = Some(record.into());
+                    }
+                    _ => unreachable!(),
+                }
+            }
         } else {
-            self.mw_cpu(register as u32, value, position);
+            self.rw(register, value, self.shard(), self.timestamp(&position));
         }
     }
 
@@ -700,8 +1084,6 @@ impl<'a> Executor<'a> {
             self.emit_branch_event(instruction.opcode, a, b, c, next_pc, next_next_pc);
         } else if instruction.is_jump_instruction() {
             self.emit_jump_event(instruction.opcode, a, b, c, next_pc, next_next_pc);
-        } else if instruction.is_syscall_instruction() {
-            self.emit_syscall_event(clk, record.a, syscall_code, b, c, next_pc);
         } else if instruction.is_misc_instruction() {
             self.emit_misc_event(
                 clk,
@@ -712,6 +1094,8 @@ impl<'a> Executor<'a> {
                 hi_or_prev_a.unwrap_or(0),
                 record.hi,
             );
+        } else if instruction.is_syscall_instruction() {
+            self.emit_syscall_event(clk, record.a, syscall_code, b, c, next_pc);
         } else {
             log::debug!("wrong {}\n", instruction.opcode);
             unreachable!()
@@ -794,11 +1178,8 @@ impl<'a> Executor<'a> {
         };
 
         match opcode {
-            Opcode::ADD => {
-                self.record.add_events.push(event);
-            }
-            Opcode::SUB => {
-                self.record.sub_events.push(event);
+            Opcode::ADD | Opcode::SUB => {
+                self.record.add_sub_events.push(event);
             }
             Opcode::XOR | Opcode::OR | Opcode::AND | Opcode::NOR => {
                 self.record.bitwise_events.push(event);
@@ -976,13 +1357,13 @@ impl<'a> Executor<'a> {
                 (instruction.op_b as u8).into(),
                 (instruction.op_c as u8).into(),
             );
-            let c = self.rr(rs2, MemoryAccessPosition::C);
-            let b = self.rr(rs1, MemoryAccessPosition::B);
+            let c = self.rr_cpu(rs2, MemoryAccessPosition::C);
+            let b = self.rr_cpu(rs1, MemoryAccessPosition::B);
             (rd, b, c)
         } else if !instruction.imm_b && instruction.imm_c {
             let (rd, rs1, imm) =
                 (instruction.op_a.into(), (instruction.op_b as u8).into(), instruction.op_c);
-            let (rd, b, c) = (rd, self.rr(rs1, MemoryAccessPosition::B), imm);
+            let (rd, b, c) = (rd, self.rr_cpu(rs1, MemoryAccessPosition::B), imm);
             (rd, b, c)
         } else {
             debug_assert!(instruction.imm_b && instruction.imm_c);
@@ -1002,11 +1383,11 @@ impl<'a> Executor<'a> {
         c: u32,
     ) -> (Option<u32>, u32, u32, u32) {
         let hi = if op.opcode.is_use_lo_hi_alu() {
-            self.rw(Register::LO, a, MemoryAccessPosition::A);
-            self.rw(Register::HI, hi, MemoryAccessPosition::HI);
+            self.rw_cpu(Register::LO, a, MemoryAccessPosition::A);
+            self.rw_cpu(Register::HI, hi, MemoryAccessPosition::HI);
             Some(hi)
         } else {
-            self.rw(rd, a, MemoryAccessPosition::A);
+            self.rw_cpu(rd, a, MemoryAccessPosition::A);
             None
         };
 
@@ -1020,9 +1401,9 @@ impl<'a> Executor<'a> {
         let b = if instruction.opcode.only_one_operand() {
             0
         } else {
-            self.rr(src2, MemoryAccessPosition::B)
+            self.rr_cpu(src2, MemoryAccessPosition::B)
         };
-        let a = self.rr(src1, MemoryAccessPosition::A);
+        let a = self.rr_cpu(src1, MemoryAccessPosition::A);
         (a, b, target)
     }
 
@@ -1042,7 +1423,9 @@ impl<'a> Executor<'a> {
         let mut next_pc = self.state.next_pc;
         let mut next_next_pc = self.state.next_pc.wrapping_add(4);
 
-        let (a, mut b, mut c): (u32, u32, u32);
+        let mut a = 0;
+        let mut b = 0;
+        let mut c = 0;
         let mut hi_or_prev_a = None;
         let mut syscall_code = 0u32;
 
@@ -1055,256 +1438,169 @@ impl<'a> Executor<'a> {
         if !self.unconstrained {
             self.report.opcode_counts[instruction.opcode] += 1;
             self.local_counts.event_counts[instruction.opcode] += 1;
-            match instruction.opcode {
-                Opcode::LB
-                | Opcode::LH
-                | Opcode::LW
-                | Opcode::LBU
-                | Opcode::LHU
-                | Opcode::LWL
-                | Opcode::LWR
-                | Opcode::LL => {
-                    self.local_counts.event_counts[Opcode::ADD] += 2;
-                }
-                Opcode::JumpDirect => {
-                    self.local_counts.event_counts[Opcode::ADD] += 1;
-                }
-                Opcode::BEQ | Opcode::BNE => {
-                    self.local_counts.event_counts[Opcode::ADD] += 1;
-                }
-                Opcode::BLTZ | Opcode::BGEZ | Opcode::BLEZ | Opcode::BGTZ => {
-                    self.local_counts.event_counts[Opcode::ADD] += 1;
-                    self.local_counts.event_counts[Opcode::SLT] += 2;
-                }
-                Opcode::DIV => {
-                    self.local_counts.event_counts[Opcode::MULT] += 2;
-                    self.local_counts.event_counts[Opcode::ADD] += 2;
-                    self.local_counts.event_counts[Opcode::SLTU] += 1;
-                }
-                Opcode::DIVU => {
-                    self.local_counts.event_counts[Opcode::MULTU] += 2;
-                    self.local_counts.event_counts[Opcode::ADD] += 2;
-                    self.local_counts.event_counts[Opcode::SLTU] += 1;
-                }
-                Opcode::CLZ | Opcode::CLO => {
-                    self.local_counts.event_counts[Opcode::SRL] += 1;
-                }
-                Opcode::MADDU | Opcode::MSUBU => {
-                    self.local_counts.event_counts[Opcode::MULTU] += 1;
-                }
-                Opcode::MADD | Opcode::MSUB => {
-                    self.local_counts.event_counts[Opcode::MULT] += 1;
-                }
-                Opcode::EXT => {
-                    self.local_counts.event_counts[Opcode::SLL] += 1;
-                    self.local_counts.event_counts[Opcode::SRL] += 1;
-                }
-                Opcode::INS => {
-                    self.local_counts.event_counts[Opcode::ROR] += 2;
-                    self.local_counts.event_counts[Opcode::SLL] += 1;
-                    self.local_counts.event_counts[Opcode::SRL] += 1;
-                    self.local_counts.event_counts[Opcode::ADD] += 1;
-                }
-                _ => {}
-            };
+            if instruction.is_memory_load_instruction() {
+                self.local_counts.event_counts[Opcode::ADD] += 2;
+            } else if instruction.is_branch_cmp_instruction() {
+                self.local_counts.event_counts[Opcode::ADD] += 1;
+                self.local_counts.event_counts[Opcode::SLT] += 2;
+            } else if instruction.is_mov_cond_instruction() {
+                self.local_counts.event_counts[Opcode::ADD] += 1;
+            } else if instruction.opcode == Opcode::EXT {
+                self.local_counts.event_counts[Opcode::SLL] += 1;
+                self.local_counts.event_counts[Opcode::SRL] += 1;
+            } else if instruction.is_cloclz_instruction() {
+                self.local_counts.event_counts[Opcode::SRL] += 1;
+            } else if instruction.is_maddsubu_instruction() {
+                self.local_counts.event_counts[Opcode::MULTU] += 1;
+            } else if instruction.opcode == Opcode::INS {
+                self.local_counts.event_counts[Opcode::ROR] += 2;
+                self.local_counts.event_counts[Opcode::SLL] += 1;
+                self.local_counts.event_counts[Opcode::SRL] += 1;
+                self.local_counts.event_counts[Opcode::ADD] += 1;
+            } else if instruction.opcode == Opcode::DIV {
+                self.local_counts.event_counts[Opcode::MULT] += 2;
+                self.local_counts.event_counts[Opcode::ADD] += 2;
+                self.local_counts.event_counts[Opcode::SLTU] += 1;
+            } else if instruction.opcode == Opcode::DIVU {
+                self.local_counts.event_counts[Opcode::MULTU] += 2;
+                self.local_counts.event_counts[Opcode::ADD] += 2;
+                self.local_counts.event_counts[Opcode::SLTU] += 1;
+            } else if instruction.is_maddsub_instruction() {
+                self.local_counts.event_counts[Opcode::MULT] += 1;
+            } else if instruction.opcode == Opcode::JumpDirect {
+                self.local_counts.event_counts[Opcode::ADD] += 1;
+            }
         }
 
-        match instruction.opcode {
-            // syscall.
-            Opcode::SYSCALL => {
-                let syscall_id = self.register(Register::V0);
-                c = self.rr(Register::A1, MemoryAccessPosition::C);
-                b = self.rr(Register::A0, MemoryAccessPosition::B);
-                let syscall = SyscallCode::from_u32(syscall_id);
-                let mut prev_a = syscall_id;
-                log::trace!(
-                    "pc: {:X} syscall {}, a0: {:X}, a1: {:X}",
-                    self.state.pc,
-                    syscall_id,
-                    b,
-                    c
-                );
-
-                if self.print_report && !self.unconstrained {
-                    self.report.syscall_counts[syscall] += 1;
-                }
-
-                // `hint_slice` is allowed in unconstrained mode since it is used to write the hint.
-                // Other syscalls are not allowed because they can lead to non-deterministic
-                // behavior, especially since many syscalls modify memory in place,
-                // which is not permitted in unconstrained mode. This will result in
-                // non-zero memory lookups when generating a proof.
-
-                if self.unconstrained
-                    && (syscall != SyscallCode::EXIT_UNCONSTRAINED && syscall != SyscallCode::WRITE)
-                {
-                    return Err(ExecutionError::InvalidSyscallUsage(syscall_id as u64));
-                }
-
-                // Update the syscall counts.
-                let syscall_for_count = syscall.count_map();
-                let syscall_count = self.state.syscall_counts.entry(syscall_for_count).or_insert(0);
-                *syscall_count += 1;
-
-                let syscall_impl = self.get_syscall(syscall).cloned();
-                syscall_code = syscall.syscall_id();
-                let mut precompile_rt = SyscallContext::new(self);
-                let (precompile_next_pc, precompile_cycles, returned_exit_code) =
-                    if let Some(syscall_impl) = syscall_impl {
-                        // Executing a syscall optionally returns a value to write to the t0
-                        // register. If it returns None, we just keep the
-                        // syscall_id in t0.
-                        let res = syscall_impl.execute(&mut precompile_rt, syscall, b, c);
-                        if let Some(r0) = res {
-                            a = r0;
-                        } else {
-                            a = syscall_id;
-                        }
-
-                        // If the syscall is `HALT` and the exit code is non-zero, return an error.
-                        if syscall == SyscallCode::HALT && precompile_rt.exit_code != 0 {
-                            return Err(ExecutionError::HaltWithNonZeroExitCode(
-                                precompile_rt.exit_code,
-                            ));
-                        }
-
-                        (
-                            precompile_rt.next_pc,
-                            syscall_impl.num_extra_cycles(),
-                            precompile_rt.exit_code,
-                        )
-                    } else {
-                        return Err(ExecutionError::UnsupportedSyscall(syscall_id));
-                    };
-
-                if syscall == SyscallCode::HALT && returned_exit_code == 0 {
-                    self.state.exited = true;
-                }
-
-                // If the syscall is `EXIT_UNCONSTRAINED`, the memory was restored to pre-unconstrained code
-                // in the execute function, so we need to re-read from A0 and A1.  Just do a peek on the
-                // registers.
-                if syscall == SyscallCode::EXIT_UNCONSTRAINED {
-                    b = self.register(Register::A0);
-                    c = self.register(Register::A1);
-                    prev_a = self.register(Register::V0);
-                }
-
-                // Allow the syscall impl to modify state.clk/pc (exit unconstrained does this)
-                clk = self.state.clk;
-                pc = self.state.pc;
-
-                self.rw(Register::V0, a, MemoryAccessPosition::A);
-                next_pc = precompile_next_pc;
-                next_next_pc = precompile_next_pc + 4;
-                self.state.clk += precompile_cycles;
-                exit_code = returned_exit_code;
-                hi_or_prev_a = Some(prev_a);
-            }
-
-            // Arithmetic instructions
-            Opcode::ADD
-            | Opcode::SUB
-            | Opcode::MULT
-            | Opcode::MULTU
-            | Opcode::MUL
-            | Opcode::DIV
-            | Opcode::DIVU
-            | Opcode::SLL
-            | Opcode::SRL
-            | Opcode::SRA
-            | Opcode::ROR
-            | Opcode::SLT
-            | Opcode::SLTU
-            | Opcode::AND
-            | Opcode::OR
-            | Opcode::XOR
-            | Opcode::NOR
-            | Opcode::CLZ
-            | Opcode::CLO
-            | Opcode::MOD
-            | Opcode::MODU => {
-                (hi_or_prev_a, a, b, c) = self.execute_alu(instruction);
-            }
-
-            // Load instructions.
-            Opcode::LB
-            | Opcode::LH
-            | Opcode::LW
-            | Opcode::LWL
-            | Opcode::LBU
-            | Opcode::LHU
-            | Opcode::LWR
-            | Opcode::LL => {
-                (hi_or_prev_a, a, b, c) = self.execute_load(instruction)?;
-            }
-
-            // Store instructions.
-            Opcode::SB | Opcode::SH | Opcode::SW | Opcode::SWL | Opcode::SWR | Opcode::SC => {
-                (hi_or_prev_a, a, b, c) = self.execute_store(instruction)?;
-            }
-
-            // Branch instructions.
-            Opcode::BEQ
-            | Opcode::BNE
-            | Opcode::BGEZ
-            | Opcode::BLEZ
-            | Opcode::BGTZ
-            | Opcode::BLTZ => {
-                (a, b, c, next_next_pc) = self.execute_branch(instruction, next_pc, next_next_pc);
-                self.state.next_is_delayslot = true;
-            }
-
+        if instruction.is_alu_instruction() {
+            (hi_or_prev_a, a, b, c) = self.execute_alu(instruction);
+        } else if instruction.is_memory_load_instruction() {
+            (hi_or_prev_a, a, b, c) = self.execute_load(instruction)?;
+        } else if instruction.is_memory_store_instruction() {
+            (hi_or_prev_a, a, b, c) = self.execute_store(instruction)?;
+        } else if instruction.is_branch_instruction() {
+            (a, b, c, next_next_pc) = self.execute_branch(instruction, next_pc, next_next_pc);
+            self.state.next_is_delayslot = true;
+        } else if instruction.is_jump_instruction() {
             // Jump instructions.
-            Opcode::Jump => {
-                (a, b, c, next_next_pc) = self.execute_jump(instruction);
-                self.state.next_is_delayslot = true;
-            }
-            Opcode::Jumpi => {
-                (a, b, c, next_next_pc) = self.execute_jumpi(instruction);
-                self.state.next_is_delayslot = true;
-            }
-            Opcode::JumpDirect => {
-                (a, b, c, next_next_pc) = self.execute_jump_direct(instruction);
-                self.state.next_is_delayslot = true;
-            }
-
-            // Misc instructions.
-            Opcode::MEQ | Opcode::MNE => {
-                (hi_or_prev_a, a, b, c) = self.execute_condmov(instruction);
-            }
-            Opcode::MADDU => {
+            (a, b, c, next_next_pc) = if instruction.opcode == Opcode::Jump {
+                self.execute_jump(instruction)
+            } else if instruction.opcode == Opcode::Jumpi {
+                self.execute_jumpi(instruction)
+            } else {
+                self.execute_jump_direct(instruction)
+            };
+            self.state.next_is_delayslot = true;
+        } else if instruction.is_mov_cond_instruction() {
+            (hi_or_prev_a, a, b, c) = self.execute_condmov(instruction);
+        } else if instruction.is_misc_instruction() {
+            if instruction.opcode == Opcode::WSBH {
+                (a, b, c) = self.execute_wsbh(instruction);
+            } else if instruction.opcode == Opcode::EXT {
+                (a, b, c) = self.execute_ext(instruction);
+            } else if instruction.opcode == Opcode::MADDU {
                 (hi_or_prev_a, a, b, c) = self.execute_maddu(instruction);
-            }
-            Opcode::MSUBU => {
+            } else if instruction.opcode == Opcode::INS {
+                (hi_or_prev_a, a, b, c) = self.execute_ins(instruction);
+            } else if instruction.opcode == Opcode::SEXT {
+                (a, b, c) = self.execute_sext(instruction);
+            } else if instruction.opcode == Opcode::TEQ {
+                (a, b, c) = self.execute_teq(instruction);
+            } else if instruction.opcode == Opcode::MSUBU {
                 (hi_or_prev_a, a, b, c) = self.execute_msubu(instruction);
-            }
-            Opcode::MADD => {
+            } else if instruction.opcode == Opcode::MADD {
                 (hi_or_prev_a, a, b, c) = self.execute_madd(instruction);
-            }
-            Opcode::MSUB => {
+            } else if instruction.opcode == Opcode::MSUB {
                 (hi_or_prev_a, a, b, c) = self.execute_msub(instruction);
             }
-            Opcode::TEQ => {
-                (a, b, c) = self.execute_teq(instruction);
-            }
-            Opcode::SEXT => {
-                (a, b, c) = self.execute_sext(instruction);
-            }
-            Opcode::WSBH => {
-                (a, b, c) = self.execute_wsbh(instruction);
-            }
-            Opcode::EXT => {
-                (a, b, c) = self.execute_ext(instruction);
-            }
-            Opcode::INS => {
-                (hi_or_prev_a, a, b, c) = self.execute_ins(instruction);
+        } else if instruction.opcode == Opcode::SYSCALL {
+            let syscall_id = self.register(Register::V0);
+            c = self.rr_cpu(Register::A1, MemoryAccessPosition::C);
+            b = self.rr_cpu(Register::A0, MemoryAccessPosition::B);
+            let syscall = SyscallCode::from_u32(syscall_id);
+            let mut prev_a = syscall_id;
+            log::trace!("pc: {:X} syscall {}, a0: {:X}, a1: {:X}", self.state.pc, syscall_id, b, c);
+
+            if self.print_report && !self.unconstrained {
+                self.report.syscall_counts[syscall] += 1;
             }
 
-            Opcode::UNIMPL => {
-                log::error!("{:X}: {:X}", self.state.pc, instruction.op_c);
-                return Err(ExecutionError::UnsupportedInstruction(instruction.op_c));
+            // `hint_slice` is allowed in unconstrained mode since it is used to write the hint.
+            // Other syscalls are not allowed because they can lead to non-deterministic
+            // behavior, especially since many syscalls modify memory in place,
+            // which is not permitted in unconstrained mode. This will result in
+            // non-zero memory lookups when generating a proof.
+
+            if self.unconstrained
+                && (syscall != SyscallCode::EXIT_UNCONSTRAINED && syscall != SyscallCode::WRITE)
+            {
+                return Err(ExecutionError::InvalidSyscallUsage(syscall_id as u64));
             }
+
+            // Update the syscall counts.
+            let syscall_for_count = syscall.count_map();
+            let syscall_count = self.state.syscall_counts.entry(syscall_for_count).or_insert(0);
+            *syscall_count += 1;
+
+            let syscall_impl = self.get_syscall(syscall).cloned();
+            syscall_code = syscall.syscall_id();
+            let mut precompile_rt = SyscallContext::new(self);
+            let (precompile_next_pc, precompile_cycles, returned_exit_code) =
+                if let Some(syscall_impl) = syscall_impl {
+                    // Executing a syscall optionally returns a value to write to the t0
+                    // register. If it returns None, we just keep the
+                    // syscall_id in t0.
+                    let res = syscall_impl.execute(&mut precompile_rt, syscall, b, c);
+                    if let Some(r0) = res {
+                        a = r0;
+                    } else {
+                        a = syscall_id;
+                    }
+
+                    // If the syscall is `HALT` and the exit code is non-zero, return an error.
+                    if syscall == SyscallCode::HALT && precompile_rt.exit_code != 0 {
+                        return Err(ExecutionError::HaltWithNonZeroExitCode(
+                            precompile_rt.exit_code,
+                        ));
+                    }
+
+                    (
+                        precompile_rt.next_pc,
+                        syscall_impl.num_extra_cycles(),
+                        precompile_rt.exit_code,
+                    )
+                } else {
+                    return Err(ExecutionError::UnsupportedSyscall(syscall_id));
+                };
+
+            if syscall == SyscallCode::HALT && returned_exit_code == 0 {
+                self.state.exited = true;
+            }
+
+            // If the syscall is `EXIT_UNCONSTRAINED`, the memory was restored to pre-unconstrained code
+            // in the execute function, so we need to re-read from A0 and A1.  Just do a peek on the
+            // registers.
+            if syscall == SyscallCode::EXIT_UNCONSTRAINED {
+                b = self.register(Register::A0);
+                c = self.register(Register::A1);
+                prev_a = self.register(Register::V0);
+            }
+
+            // Allow the syscall impl to modify state.clk/pc (exit unconstrained does this)
+            clk = self.state.clk;
+            pc = self.state.pc;
+
+            self.rw_cpu(Register::V0, a, MemoryAccessPosition::A);
+            next_pc = precompile_next_pc;
+            next_next_pc = precompile_next_pc + 4;
+            self.state.clk += precompile_cycles;
+            exit_code = returned_exit_code;
+            hi_or_prev_a = Some(prev_a);
+        } else if instruction.opcode == Opcode::UNIMPL {
+            log::error!("{:X}: {:X}", self.state.pc, instruction.op_c);
+            return Err(ExecutionError::UnsupportedInstruction(instruction.op_c));
+        } else {
+            unreachable!()
         }
 
         // Emit the CPU event for this cycle.
@@ -1340,8 +1636,8 @@ impl<'a> Executor<'a> {
             (instruction.op_b as u8).into(),
             (instruction.op_c as u8).into(),
         );
-        let c = self.rr(rs, MemoryAccessPosition::C);
-        let b = self.rr(rt, MemoryAccessPosition::B);
+        let c = self.rr_cpu(rs, MemoryAccessPosition::C);
+        let b = self.rr_cpu(rt, MemoryAccessPosition::B);
         let multiply = b as u64 * c as u64;
         let lo_val = self.register(32.into());
         let hi_val = self.register(33.into());
@@ -1349,8 +1645,8 @@ impl<'a> Executor<'a> {
         let out = multiply + addend;
         let out_lo = out as u32;
         let out_hi = (out >> 32) as u32;
-        self.rw(lo, out_lo, MemoryAccessPosition::A);
-        self.rw(Register::HI, out_hi, MemoryAccessPosition::HI);
+        self.rw_cpu(lo, out_lo, MemoryAccessPosition::A);
+        self.rw_cpu(Register::HI, out_hi, MemoryAccessPosition::HI);
         (Some(lo_val), out_lo, b, c)
     }
 
@@ -1360,8 +1656,8 @@ impl<'a> Executor<'a> {
             (instruction.op_b as u8).into(),
             (instruction.op_c as u8).into(),
         );
-        let c = self.rr(rs, MemoryAccessPosition::C);
-        let b = self.rr(rt, MemoryAccessPosition::B);
+        let c = self.rr_cpu(rs, MemoryAccessPosition::C);
+        let b = self.rr_cpu(rt, MemoryAccessPosition::B);
         let multiply = b as u64 * c as u64;
         let lo_val = self.register(32.into());
         let hi_val = self.register(33.into());
@@ -1369,8 +1665,8 @@ impl<'a> Executor<'a> {
         let out = addend - multiply;
         let out_lo = out as u32;
         let out_hi = (out >> 32) as u32;
-        self.rw(lo, out_lo, MemoryAccessPosition::A);
-        self.rw(Register::HI, out_hi, MemoryAccessPosition::HI);
+        self.rw_cpu(lo, out_lo, MemoryAccessPosition::A);
+        self.rw_cpu(Register::HI, out_hi, MemoryAccessPosition::HI);
         (Some(lo_val), out_lo, b, c)
     }
 
@@ -1380,8 +1676,8 @@ impl<'a> Executor<'a> {
             (instruction.op_b as u8).into(),
             (instruction.op_c as u8).into(),
         );
-        let c = self.rr(rs, MemoryAccessPosition::C);
-        let b = self.rr(rt, MemoryAccessPosition::B);
+        let c = self.rr_cpu(rs, MemoryAccessPosition::C);
+        let b = self.rr_cpu(rt, MemoryAccessPosition::B);
         let multiply = (b as i32 as i64) * (c as i32 as i64);
         let lo_val = self.register(32.into());
         let hi_val = self.register(33.into());
@@ -1389,8 +1685,8 @@ impl<'a> Executor<'a> {
         let out = (multiply + (addend as i64)) as u64;
         let out_lo = out as u32;
         let out_hi = (out >> 32) as u32;
-        self.rw(lo, out_lo, MemoryAccessPosition::A);
-        self.rw(Register::HI, out_hi, MemoryAccessPosition::HI);
+        self.rw_cpu(lo, out_lo, MemoryAccessPosition::A);
+        self.rw_cpu(Register::HI, out_hi, MemoryAccessPosition::HI);
         (Some(lo_val), out_lo, b, c)
     }
 
@@ -1400,8 +1696,8 @@ impl<'a> Executor<'a> {
             (instruction.op_b as u8).into(),
             (instruction.op_c as u8).into(),
         );
-        let c = self.rr(rs, MemoryAccessPosition::C);
-        let b = self.rr(rt, MemoryAccessPosition::B);
+        let c = self.rr_cpu(rs, MemoryAccessPosition::C);
+        let b = self.rr_cpu(rt, MemoryAccessPosition::B);
         let multiply = (b as i32 as i64) * (c as i32 as i64);
         let lo_val = self.register(32.into());
         let hi_val = self.register(33.into());
@@ -1409,48 +1705,48 @@ impl<'a> Executor<'a> {
         let out = ((addend as i64) - multiply) as u64;
         let out_lo = out as u32;
         let out_hi = (out >> 32) as u32;
-        self.rw(lo, out_lo, MemoryAccessPosition::A);
-        self.rw(Register::HI, out_hi, MemoryAccessPosition::HI);
+        self.rw_cpu(lo, out_lo, MemoryAccessPosition::A);
+        self.rw_cpu(Register::HI, out_hi, MemoryAccessPosition::HI);
         (Some(lo_val), out_lo, b, c)
     }
 
     fn execute_sext(&mut self, instruction: &Instruction) -> (u32, u32, u32) {
         let (rd, rt, c) =
             (instruction.op_a.into(), (instruction.op_b as u8).into(), instruction.op_c);
-        let b = self.rr(rt, MemoryAccessPosition::B);
+        let b = self.rr_cpu(rt, MemoryAccessPosition::B);
         let a =
             if c > 0 { (b & 0xffff) as i16 as i32 as u32 } else { (b & 0xff) as i8 as i32 as u32 };
-        self.rw(rd, a, MemoryAccessPosition::A);
+        self.rw_cpu(rd, a, MemoryAccessPosition::A);
         (a, b, c)
     }
 
     fn execute_wsbh(&mut self, instruction: &Instruction) -> (u32, u32, u32) {
         let (rd, rt) = (instruction.op_a.into(), (instruction.op_b as u8).into());
-        let b = self.rr(rt, MemoryAccessPosition::B);
+        let b = self.rr_cpu(rt, MemoryAccessPosition::B);
         let a = (((b >> 16) & 0xFF) << 24)
             | (((b >> 24) & 0xFF) << 16)
             | ((b & 0xFF) << 8)
             | ((b >> 8) & 0xFF);
-        self.rw(rd, a, MemoryAccessPosition::A);
+        self.rw_cpu(rd, a, MemoryAccessPosition::A);
         (a, b, 0)
     }
 
     fn execute_ext(&mut self, instruction: &Instruction) -> (u32, u32, u32) {
         let (rd, rt, c) =
             (instruction.op_a.into(), (instruction.op_b as u8).into(), instruction.op_c);
-        let b = self.rr(rt, MemoryAccessPosition::B);
+        let b = self.rr_cpu(rt, MemoryAccessPosition::B);
         let msbd = c >> 5;
         let lsb = c & 0x1f;
         let mask_msb = (1 << (msbd + lsb + 1)) - 1;
         let a = (b & mask_msb) >> lsb;
-        self.rw(rd, a, MemoryAccessPosition::A);
+        self.rw_cpu(rd, a, MemoryAccessPosition::A);
         (a, b, c)
     }
 
     fn execute_ins(&mut self, instruction: &Instruction) -> (Option<u32>, u32, u32, u32) {
         let (rd, rt, c) =
             (instruction.op_a.into(), (instruction.op_b as u8).into(), instruction.op_c);
-        let b = self.rr(rt, MemoryAccessPosition::B);
+        let b = self.rr_cpu(rt, MemoryAccessPosition::B);
         let a = self.register(rd);
         let prev_a = a;
         let msb = c >> 5;
@@ -1458,15 +1754,15 @@ impl<'a> Executor<'a> {
         let mask = (1 << (msb - lsb + 1)) - 1;
         let mask_field = mask << lsb;
         let a = (a & !mask_field) | ((b << lsb) & mask_field);
-        self.rw(rd, a, MemoryAccessPosition::A);
+        self.rw_cpu(rd, a, MemoryAccessPosition::A);
         (Some(prev_a), a, b, c)
     }
 
     fn execute_teq(&mut self, instruction: &Instruction) -> (u32, u32, u32) {
         let (rs, rt) = (instruction.op_a.into(), (instruction.op_b as u8).into());
 
-        let src2 = self.rr(rt, MemoryAccessPosition::B);
-        let src1 = self.rr(rs, MemoryAccessPosition::A);
+        let src2 = self.rr_cpu(rt, MemoryAccessPosition::B);
+        let src1 = self.rr_cpu(rs, MemoryAccessPosition::A);
 
         if src1 == src2 {
             panic!("Trap Error");
@@ -1482,8 +1778,8 @@ impl<'a> Executor<'a> {
         );
         let a = self.register(rd);
         let prev_a = a;
-        let c = self.rr(rt, MemoryAccessPosition::C);
-        let b = self.rr(rs, MemoryAccessPosition::B);
+        let c = self.rr_cpu(rt, MemoryAccessPosition::C);
+        let b = self.rr_cpu(rs, MemoryAccessPosition::B);
         let mov = match instruction.opcode {
             Opcode::MEQ => c == 0,
             Opcode::MNE => c != 0,
@@ -1493,7 +1789,7 @@ impl<'a> Executor<'a> {
         };
 
         let a = if mov { b } else { a };
-        self.rw(rd, a, MemoryAccessPosition::A);
+        self.rw_cpu(rd, a, MemoryAccessPosition::A);
         (Some(prev_a), a, b, c)
     }
 
@@ -1567,7 +1863,7 @@ impl<'a> Executor<'a> {
     ) -> Result<(Option<u32>, u32, u32, u32), ExecutionError> {
         let (rt_reg, rs_reg, offset_ext) =
             (instruction.op_a.into(), (instruction.op_b as u8).into(), instruction.op_c);
-        let rs_raw = self.rr(rs_reg, MemoryAccessPosition::B);
+        let rs_raw = self.rr_cpu(rs_reg, MemoryAccessPosition::B);
         // We needn't the memory access record here, because we will write to rt_reg,
         // and we could use the `prev_value` of the MemoryWriteRecord in the circuit.
         let rt = self.register(rt_reg);
@@ -1575,7 +1871,7 @@ impl<'a> Executor<'a> {
         let virt_raw = rs_raw.wrapping_add(offset_ext);
         let virt = virt_raw & 0xFFFF_FFFC;
 
-        let mem = self.mr_cpu(virt, MemoryAccessPosition::Memory);
+        let mem = self.mr_cpu(virt);
         let rs = virt_raw;
 
         let val = match instruction.opcode {
@@ -1615,7 +1911,7 @@ impl<'a> Executor<'a> {
             }
             _ => unreachable!(),
         };
-        self.rw(rt_reg, val, MemoryAccessPosition::A);
+        self.rw_cpu(rt_reg, val, MemoryAccessPosition::A);
 
         Ok((Some(rt), val, rs_raw, offset_ext))
     }
@@ -1626,11 +1922,11 @@ impl<'a> Executor<'a> {
     ) -> Result<(Option<u32>, u32, u32, u32), ExecutionError> {
         let (rt_reg, rs_reg, offset_ext) =
             (instruction.op_a.into(), (instruction.op_b as u8).into(), instruction.op_c);
-        let rs = self.rr(rs_reg, MemoryAccessPosition::B);
+        let rs = self.rr_cpu(rs_reg, MemoryAccessPosition::B);
         let rt = if instruction.opcode == Opcode::SC {
             self.register(rt_reg)
         } else {
-            self.rr(rt_reg, MemoryAccessPosition::A)
+            self.rr_cpu(rt_reg, MemoryAccessPosition::A)
         };
 
         let virt_raw = rs.wrapping_add(offset_ext);
@@ -1679,10 +1975,9 @@ impl<'a> Executor<'a> {
         self.mw_cpu(
             virt_raw & 0xFFFF_FFFC, // align addr
             val,
-            MemoryAccessPosition::Memory,
         );
         if instruction.opcode == Opcode::SC {
-            self.rw(rt_reg, 1, MemoryAccessPosition::A);
+            self.rw_cpu(rt_reg, 1, MemoryAccessPosition::A);
 
             Ok((Some(rt), 1, rs, offset_ext))
         } else {
@@ -1719,10 +2014,10 @@ impl<'a> Executor<'a> {
     /// and set the target address to next_next_pc (the next_pc is the address of delayslot instruction)
     fn execute_jump(&mut self, instruction: &Instruction) -> (u32, u32, u32, u32) {
         let (link, target) = (instruction.op_a.into(), (instruction.op_b as u8).into());
-        let target_pc = self.rr(target, MemoryAccessPosition::B);
+        let target_pc = self.rr_cpu(target, MemoryAccessPosition::B);
 
         let return_pc = self.state.next_pc.wrapping_add(4);
-        self.rw(link, return_pc, MemoryAccessPosition::A);
+        self.rw_cpu(link, return_pc, MemoryAccessPosition::A);
 
         (return_pc, target_pc, 0, target_pc)
     }
@@ -1731,7 +2026,7 @@ impl<'a> Executor<'a> {
         let (link, target_pc) = (instruction.op_a.into(), instruction.op_b);
 
         let return_pc = self.state.next_pc.wrapping_add(4);
-        self.rw(link, return_pc, MemoryAccessPosition::A);
+        self.rw_cpu(link, return_pc, MemoryAccessPosition::A);
 
         (return_pc, target_pc, 0, target_pc)
     }
@@ -1742,7 +2037,7 @@ impl<'a> Executor<'a> {
         let target_pc = offset.wrapping_add(self.state.next_pc);
 
         let return_pc = self.state.next_pc.wrapping_add(4);
-        self.rw(link, return_pc, MemoryAccessPosition::A);
+        self.rw_cpu(link, return_pc, MemoryAccessPosition::A);
 
         (return_pc, offset, 0, target_pc)
     }
@@ -1790,8 +2085,8 @@ impl<'a> Executor<'a> {
                     let padded_lde_size = estimate_mips_lde_size(padded_event_counts, &self.costs);
                     if padded_lde_size > self.lde_size_threshold {
                         tracing::warn!(
-                            "stopping shard early due to lde size: {} gb",
-                            (padded_lde_size as u64) / 1_000_000_000
+                            "stopping shard early due to lde size: {} Gib",
+                            (padded_lde_size as f64) / (1 << 9) as f64,
                         );
                         shape_match_found = false;
                     }
@@ -1809,7 +2104,7 @@ impl<'a> Executor<'a> {
                     shape_match_found = false;
 
                     for shape in maximal_shapes.iter() {
-                        let cpu_threshold = shape.log2_height(&MipsAirId::Cpu).unwrap();
+                        let cpu_threshold = shape[MipsAirId::Cpu];
                         if self.state.clk > ((1 << cpu_threshold) << 2) {
                             continue;
                         }
@@ -1821,7 +2116,7 @@ impl<'a> Executor<'a> {
                                 continue;
                             }
 
-                            let threshold = shape.height(&air).unwrap_or_default();
+                            let threshold = 1 << shape[air];
                             let count = event_counts[air] as usize;
                             if count > threshold {
                                 shape_too_small = true;
@@ -1845,7 +2140,7 @@ impl<'a> Executor<'a> {
 
                     if !shape_match_found {
                         self.record.counts = Some(event_counts);
-                        log::warn!(
+                        log::debug!(
                             "stopping shard early due to no shapes fitting: \
                             clk: {},
                             clk_usage: {}",
@@ -2149,14 +2444,33 @@ impl<'a> Executor<'a> {
                 .push(MemoryInitializeFinalizeEvent::finalize_from_record(0, addr_0_final_record));
 
             let memory_initialize_events = &mut self.record.global_memory_initialize_events;
-            let addr_0_initialize_event =
-                MemoryInitializeFinalizeEvent::initialize(0, 0, addr_0_record.is_some());
+            let addr_0_initialize_event = MemoryInitializeFinalizeEvent::initialize(0, 0);
             memory_initialize_events.push(addr_0_initialize_event);
 
             // Count the number of touched memory addresses manually, since `PagedMemory` doesn't
             // already know its length.
             self.report.touched_memory_addresses = 0;
-            for addr in self.state.memory.keys() {
+            for addr in 1..NUM_REGISTERS as u32 {
+                let record = self.state.memory.registers.get(addr);
+                if let Some(record) = record {
+                    if self.print_report {
+                        self.report.touched_memory_addresses += 1;
+                    }
+                    // Program memory is initialized in the MemoryProgram chip and doesn't require
+                    // any events, so we only send init events for other memory
+                    // addresses.
+                    if !self.record.program.image.contains_key(&addr) {
+                        let initial_value =
+                            self.state.uninitialized_memory.registers.get(addr).unwrap_or(&0);
+                        memory_initialize_events
+                            .push(MemoryInitializeFinalizeEvent::initialize(addr, *initial_value));
+                    }
+
+                    memory_finalize_events
+                        .push(MemoryInitializeFinalizeEvent::finalize_from_record(addr, record));
+                }
+            }
+            for addr in self.state.memory.page_table.keys() {
                 self.report.touched_memory_addresses += 1;
                 if addr == 0 {
                     // Handled above.
@@ -2167,11 +2481,8 @@ impl<'a> Executor<'a> {
                 // events, so we only send init events for other memory addresses.
                 if !self.record.program.image.contains_key(&addr) {
                     let initial_value = self.state.uninitialized_memory.get(addr).unwrap_or(&0);
-                    memory_initialize_events.push(MemoryInitializeFinalizeEvent::initialize(
-                        addr,
-                        *initial_value,
-                        true,
-                    ));
+                    memory_initialize_events
+                        .push(MemoryInitializeFinalizeEvent::initialize(addr, *initial_value));
                 }
 
                 let record = *self.state.memory.get(addr).unwrap();
@@ -2181,6 +2492,7 @@ impl<'a> Executor<'a> {
         }
     }
 
+    #[inline(always)]
     fn get_syscall(&mut self, code: SyscallCode) -> Option<&Arc<dyn Syscall>> {
         self.syscall_map.get(&code)
     }

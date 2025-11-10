@@ -57,3 +57,4 @@ test-artifacts = { path = "../../test-artifacts" }
 
 [features]
 bigint-rug = ["zkm-curves/bigint-rug"]
+pre-alloc = []

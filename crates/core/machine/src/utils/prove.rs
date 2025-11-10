@@ -1,3 +1,9 @@
+use crate::mips::MipsAir;
+use p3_maybe_rayon::prelude::*;
+use p3_uni_stark::SymbolicAirBuilder;
+use serde::{de::DeserializeOwned, Serialize};
+use size::Size;
+use std::thread::ScopedJoinHandle;
 use std::{
     fs::File,
     io::{
@@ -5,15 +11,8 @@ use std::{
     },
     sync::{mpsc::sync_channel, Arc, Mutex},
 };
-use web_time::Instant;
-
-use crate::mips::MipsAir;
-use p3_maybe_rayon::prelude::*;
-use p3_uni_stark::SymbolicAirBuilder;
-use serde::{de::DeserializeOwned, Serialize};
-use size::Size;
-use std::thread::ScopedJoinHandle;
 use thiserror::Error;
+use web_time::Instant;
 use zkm_stark::{
     koala_bear_poseidon2::KoalaBearPoseidon2, MachineProvingKey, MachineVerificationError,
 };
@@ -162,7 +161,7 @@ where
         // Spawn the checkpoint generator thread.
         let checkpoint_generator_span = tracing::Span::current().clone();
         let (checkpoints_tx, checkpoints_rx) =
-            sync_channel::<(usize, File, bool)>(opts.checkpoints_channel_capacity);
+            sync_channel::<(usize, File, bool, u64)>(opts.checkpoints_channel_capacity);
         let checkpoint_generator_handle: ScopedJoinHandle<Result<_, ZKMCoreProverError>> =
             s.spawn(move || {
                 let _span = checkpoint_generator_span.enter();
@@ -186,7 +185,9 @@ where
                             .map_err(ZKMCoreProverError::IoError)?;
 
                         // Send the checkpoint.
-                        checkpoints_tx.send((index, checkpoint_file, done)).unwrap();
+                        checkpoints_tx
+                            .send((index, checkpoint_file, done, runtime.state.global_clk))
+                            .unwrap();
 
                         // If we've reached the final checkpoint, break out of the loop.
                         if done {
@@ -239,7 +240,7 @@ where
                     loop {
                         // Receive the latest checkpoint.
                         let received = { checkpoints_rx.lock().unwrap().recv() };
-                        if let Ok((index, mut checkpoint, done)) = received {
+                        if let Ok((index, mut checkpoint, done, num_cycles)) = received {
                             // Trace the checkpoint and reconstruct the execution records.
                             let mut reader = io::BufReader::new(&checkpoint);
                             let execution_state: ExecutionState =
@@ -282,44 +283,120 @@ where
                                 deferred.append(&mut record.defer());
                             }
 
-                            // See if any deferred shards are ready to be committed to.
-                            let mut deferred = deferred.split(done, opts.split_opts);
-                            log::debug!("deferred {} records", deferred.len());
+                            // We combine the memory init/finalize events if they are "small"
+                            // and would affect performance.
+                            let mut shape_fixed_records = if done
+                                && num_cycles < 1 << 21
+                                && deferred.global_memory_initialize_events.len()
+                                    < opts.split_opts.combine_memory_threshold
+                                && deferred.global_memory_finalize_events.len()
+                                    < opts.split_opts.combine_memory_threshold
+                            {
+                                let mut records_clone = records.clone();
+                                let last_record = records_clone.last_mut();
+                                // See if any deferred shards are ready to be committed to.
+                                let mut deferred =
+                                    deferred.split(done, last_record, opts.split_opts);
+                                tracing::debug!("deferred {} records", deferred.len());
 
-                            // Update the public values & prover state for the shards which do not
-                            // contain "cpu events" before committing to them.
-                            if !done {
-                                state.execution_shard += 1;
-                            }
-                            for record in deferred.iter_mut() {
-                                state.shard += 1;
-                                state.previous_init_addr_bits =
-                                    record.public_values.previous_init_addr_bits;
-                                state.last_init_addr_bits =
-                                    record.public_values.last_init_addr_bits;
-                                state.previous_finalize_addr_bits =
-                                    record.public_values.previous_finalize_addr_bits;
-                                state.last_finalize_addr_bits =
-                                    record.public_values.last_finalize_addr_bits;
-                                state.start_pc = state.next_pc;
-                                record.public_values = *state;
-                            }
-                            records.append(&mut deferred);
-
-                            // Generate the dependencies.
-                            tracing::debug_span!("generate dependencies", index).in_scope(|| {
-                                prover.machine().generate_dependencies(&mut records, &opts, None);
-                            });
-
-                            // Let another worker update the state.
-                            record_gen_sync.advance_turn();
-
-                            // Fix the shape of the records.
-                            if let Some(shape_config) = shape_config {
-                                for record in records.iter_mut() {
-                                    shape_config.fix_shape(record).unwrap();
+                                // Update the public values & prover state for the shards which do
+                                // not contain "cpu events" before
+                                // committing to them.
+                                if !done {
+                                    state.execution_shard += 1;
                                 }
+                                for record in deferred.iter_mut() {
+                                    state.shard += 1;
+                                    state.previous_init_addr_bits =
+                                        record.public_values.previous_init_addr_bits;
+                                    state.last_init_addr_bits =
+                                        record.public_values.last_init_addr_bits;
+                                    state.previous_finalize_addr_bits =
+                                        record.public_values.previous_finalize_addr_bits;
+                                    state.last_finalize_addr_bits =
+                                        record.public_values.last_finalize_addr_bits;
+                                    state.start_pc = state.next_pc;
+                                    record.public_values = *state;
+                                }
+                                records_clone.append(&mut deferred);
+
+                                // Generate the dependencies.
+                                tracing::debug_span!("generate dependencies", index).in_scope(
+                                    || {
+                                        prover.machine().generate_dependencies(
+                                            &mut records_clone,
+                                            &opts,
+                                            None,
+                                        );
+                                    },
+                                );
+
+                                // Let another worker update the state.
+                                record_gen_sync.advance_turn();
+
+                                // Fix the shape of the records.
+                                let mut fixed_shape = true;
+                                if let Some(shape_config) = shape_config {
+                                    for record in records_clone.iter_mut() {
+                                        if shape_config.fix_shape(record).is_err() {
+                                            fixed_shape = false;
+                                        }
+                                    }
+                                }
+                                fixed_shape.then_some(records_clone)
+                            } else {
+                                None
+                            };
+
+                            if shape_fixed_records.is_none() {
+                                // See if any deferred shards are ready to be committed to.
+                                let mut deferred = deferred.split(done, None, opts.split_opts);
+                                log::debug!("deferred {} records", deferred.len());
+
+                                // Update the public values & prover state for the shards which do not
+                                // contain "cpu events" before committing to them.
+                                if !done {
+                                    state.execution_shard += 1;
+                                }
+                                for record in deferred.iter_mut() {
+                                    state.shard += 1;
+                                    state.previous_init_addr_bits =
+                                        record.public_values.previous_init_addr_bits;
+                                    state.last_init_addr_bits =
+                                        record.public_values.last_init_addr_bits;
+                                    state.previous_finalize_addr_bits =
+                                        record.public_values.previous_finalize_addr_bits;
+                                    state.last_finalize_addr_bits =
+                                        record.public_values.last_finalize_addr_bits;
+                                    state.start_pc = state.next_pc;
+                                    record.public_values = *state;
+                                }
+                                records.append(&mut deferred);
+
+                                // Generate the dependencies.
+                                tracing::debug_span!("generate dependencies", index).in_scope(
+                                    || {
+                                        prover.machine().generate_dependencies(
+                                            &mut records,
+                                            &opts,
+                                            None,
+                                        );
+                                    },
+                                );
+
+                                // Let another worker update the state.
+                                record_gen_sync.advance_turn();
+
+                                // Fix the shape of the records.
+                                if let Some(shape_config) = shape_config {
+                                    for record in records.iter_mut() {
+                                        shape_config.fix_shape(record).unwrap();
+                                    }
+                                }
+                                shape_fixed_records = Some(records);
                             }
+
+                            let records = shape_fixed_records.unwrap();
 
                             #[cfg(feature = "debug")]
                             all_records_tx.send(records.clone()).unwrap();

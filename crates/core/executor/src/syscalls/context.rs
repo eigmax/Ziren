@@ -102,6 +102,28 @@ impl<'a, 'b> SyscallContext<'a, 'b> {
         records
     }
 
+    /// Read a register and record the memory access.
+    pub fn rr_traced(&mut self, register: Register) -> (MemoryReadRecord, u32) {
+        let record = self.rt.rr_traced(
+            register,
+            self.current_shard,
+            self.clk,
+            Some(&mut self.local_memory_access),
+        );
+        (record, record.value)
+    }
+
+    /// Write a register and record the memory access.
+    pub fn rw_traced(&mut self, register: Register, value: u32) -> MemoryWriteRecord {
+        self.rt.rw_cpu_traced(
+            register,
+            value,
+            self.current_shard,
+            self.clk,
+            Some(&mut self.local_memory_access),
+        )
+    }
+
     /// Postprocess the syscall.  Specifically will process the syscall's memory local events.
     pub fn postprocess(&mut self) -> Vec<MemoryLocalEvent> {
         let mut syscall_local_mem_events = Vec::new();

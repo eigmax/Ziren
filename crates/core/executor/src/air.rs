@@ -4,8 +4,10 @@ use std::{
 };
 
 use enum_map::Enum;
+use enum_map::EnumMap;
 use serde::{Deserialize, Serialize};
 use strum::{EnumIter, IntoEnumIterator};
+use zkm_stark::shape::Shape;
 
 /// MIPS AIR Identifiers.
 ///
@@ -118,6 +120,7 @@ pub enum MipsAirId {
 impl MipsAirId {
     /// Returns the AIRs that are not part of precompile shards and not the program or byte AIR.
     #[must_use]
+    #[inline(always)]
     pub fn core() -> Vec<MipsAirId> {
         vec![
             MipsAirId::Cpu,
@@ -211,5 +214,32 @@ impl FromStr for MipsAirId {
 impl Display for MipsAirId {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "{}", self.as_str())
+    }
+}
+
+/// Defines a set of maximal shapes for generating core proofs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MaximalShapes {
+    inner: Vec<EnumMap<MipsAirId, u32>>,
+}
+
+impl FromIterator<Shape<MipsAirId>> for MaximalShapes {
+    fn from_iter<T: IntoIterator<Item = Shape<MipsAirId>>>(iter: T) -> Self {
+        let mut maximal_shapes = Vec::new();
+        for shape in iter {
+            let mut maximal_shape = EnumMap::<MipsAirId, u32>::default();
+            for (air, height) in shape {
+                maximal_shape[air] = height as u32;
+            }
+            maximal_shapes.push(maximal_shape);
+        }
+        Self { inner: maximal_shapes }
+    }
+}
+
+impl MaximalShapes {
+    /// Returns an iterator over the maximal shapes.
+    pub fn iter(&self) -> impl Iterator<Item = &EnumMap<MipsAirId, u32>> {
+        self.inner.iter()
     }
 }
