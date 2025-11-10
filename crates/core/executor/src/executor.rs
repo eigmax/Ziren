@@ -1084,8 +1084,6 @@ impl<'a> Executor<'a> {
             self.emit_branch_event(instruction.opcode, a, b, c, next_pc, next_next_pc);
         } else if instruction.is_jump_instruction() {
             self.emit_jump_event(instruction.opcode, a, b, c, next_pc, next_next_pc);
-        } else if instruction.is_syscall_instruction() {
-            self.emit_syscall_event(clk, record.a, syscall_code, b, c, next_pc);
         } else if instruction.is_misc_instruction() {
             self.emit_misc_event(
                 clk,
@@ -1096,6 +1094,8 @@ impl<'a> Executor<'a> {
                 hi_or_prev_a.unwrap_or(0),
                 record.hi,
             );
+        } else if instruction.is_syscall_instruction() {
+            self.emit_syscall_event(clk, record.a, syscall_code, b, c, next_pc);
         } else {
             log::debug!("wrong {}\n", instruction.opcode);
             unreachable!()
