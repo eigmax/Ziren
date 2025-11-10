@@ -1438,58 +1438,38 @@ impl<'a> Executor<'a> {
         if !self.unconstrained {
             self.report.opcode_counts[instruction.opcode] += 1;
             self.local_counts.event_counts[instruction.opcode] += 1;
-            match instruction.opcode {
-                Opcode::LB
-                | Opcode::LH
-                | Opcode::LW
-                | Opcode::LBU
-                | Opcode::LHU
-                | Opcode::LWL
-                | Opcode::LWR
-                | Opcode::LL => {
-                    self.local_counts.event_counts[Opcode::ADD] += 2;
-                }
-                Opcode::JumpDirect => {
-                    self.local_counts.event_counts[Opcode::ADD] += 1;
-                }
-                Opcode::BEQ | Opcode::BNE => {
-                    self.local_counts.event_counts[Opcode::ADD] += 1;
-                }
-                Opcode::BLTZ | Opcode::BGEZ | Opcode::BLEZ | Opcode::BGTZ => {
-                    self.local_counts.event_counts[Opcode::ADD] += 1;
-                    self.local_counts.event_counts[Opcode::SLT] += 2;
-                }
-                Opcode::DIV => {
-                    self.local_counts.event_counts[Opcode::MULT] += 2;
-                    self.local_counts.event_counts[Opcode::ADD] += 2;
-                    self.local_counts.event_counts[Opcode::SLTU] += 1;
-                }
-                Opcode::DIVU => {
-                    self.local_counts.event_counts[Opcode::MULTU] += 2;
-                    self.local_counts.event_counts[Opcode::ADD] += 2;
-                    self.local_counts.event_counts[Opcode::SLTU] += 1;
-                }
-                Opcode::CLZ | Opcode::CLO => {
-                    self.local_counts.event_counts[Opcode::SRL] += 1;
-                }
-                Opcode::MADDU | Opcode::MSUBU => {
-                    self.local_counts.event_counts[Opcode::MULTU] += 1;
-                }
-                Opcode::MADD | Opcode::MSUB => {
-                    self.local_counts.event_counts[Opcode::MULT] += 1;
-                }
-                Opcode::EXT => {
-                    self.local_counts.event_counts[Opcode::SLL] += 1;
-                    self.local_counts.event_counts[Opcode::SRL] += 1;
-                }
-                Opcode::INS => {
-                    self.local_counts.event_counts[Opcode::ROR] += 2;
-                    self.local_counts.event_counts[Opcode::SLL] += 1;
-                    self.local_counts.event_counts[Opcode::SRL] += 1;
-                    self.local_counts.event_counts[Opcode::ADD] += 1;
-                }
-                _ => {}
-            };
+            if instruction.is_memory_load_instruction() {
+                self.local_counts.event_counts[Opcode::ADD] += 2;
+            } else if instruction.is_branch_cmp_instruction() {
+                self.local_counts.event_counts[Opcode::ADD] += 1;
+                self.local_counts.event_counts[Opcode::SLT] += 2;
+            } else if instruction.is_mov_cond_instruction() {
+                self.local_counts.event_counts[Opcode::ADD] += 1;
+            } else if instruction.opcode == Opcode::EXT {
+                self.local_counts.event_counts[Opcode::SLL] += 1;
+                self.local_counts.event_counts[Opcode::SRL] += 1;
+            } else if instruction.is_cloclz_instruction() {
+                self.local_counts.event_counts[Opcode::SRL] += 1;
+            } else if instruction.is_maddsubu_instruction() {
+                self.local_counts.event_counts[Opcode::MULTU] += 1;
+            } else if instruction.opcode == Opcode::INS {
+                self.local_counts.event_counts[Opcode::ROR] += 2;
+                self.local_counts.event_counts[Opcode::SLL] += 1;
+                self.local_counts.event_counts[Opcode::SRL] += 1;
+                self.local_counts.event_counts[Opcode::ADD] += 1;
+            } else if instruction.opcode == Opcode::DIV {
+                self.local_counts.event_counts[Opcode::MULT] += 2;
+                self.local_counts.event_counts[Opcode::ADD] += 2;
+                self.local_counts.event_counts[Opcode::SLTU] += 1;
+            } else if instruction.opcode == Opcode::DIVU {
+                self.local_counts.event_counts[Opcode::MULTU] += 2;
+                self.local_counts.event_counts[Opcode::ADD] += 2;
+                self.local_counts.event_counts[Opcode::SLTU] += 1;
+            } else if instruction.is_maddsub_instruction() {
+                self.local_counts.event_counts[Opcode::MULT] += 1;
+            } else if instruction.opcode == Opcode::JumpDirect {
+                self.local_counts.event_counts[Opcode::ADD] += 1;
+            }
         }
 
         if instruction.is_alu_instruction() {
